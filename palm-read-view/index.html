@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Shubh AI • Palm Reading</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gradient-to-br from-black via-slate-900 to-black min-h-screen text-white">
+
+  <!-- Header -->
+  <header class="p-6 border-b border-white/10">
+    <h1 class="text-2xl font-bold tracking-wide">🔮 Shubh AI</h1>
+    <p class="text-sm text-gray-400">Palm Reading & Astrology Assistant</p>
+  </header>
+
+  <main class="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 max-w-7xl mx-auto">
+
+    <!-- Upload -->
+    <section class="bg-white/5 rounded-2xl p-5 border border-white/10">
+      <h2 class="text-lg font-semibold mb-3">Upload Your Palm</h2>
+      <input type="file" id="palmInput" accept="image/*" class="block w-full text-sm text-gray-400" />
+      <div id="previewBox" class="hidden mt-4">
+        <img id="previewImage" class="rounded-xl border border-white/10" />
+      </div>
+    </section>
+
+    <!-- Chat -->
+    <section class="lg:col-span-2 bg-white/5 rounded-2xl p-5 border border-white/10 flex flex-col">
+      <div id="chatBox" class="flex-1 space-y-3 overflow-y-auto">
+        <div class="bg-white/10 rounded-xl p-3 max-w-lg">
+          <b class="text-amber-400">Shubh AI:</b> Upload your palm and ask your question.
+        </div>
+      </div>
+
+      <div class="mt-4 flex gap-2">
+        <input id="chatInput" class="flex-1 rounded-xl bg-black/40 border border-white/10 px-4 py-3" placeholder="Ask about marriage, career..." />
+        <button onclick="sendMessage()" class="bg-amber-400 text-black px-5 py-3 rounded-xl font-semibold">Send</button>
+      </div>
+    </section>
+  </main>
+
+<script>
+let palmFile = null;
+const palmInput = document.getElementById('palmInput');
+const previewImage = document.getElementById('previewImage');
+const previewBox = document.getElementById('previewBox');
+const chatBox = document.getElementById('chatBox');
+
+palmInput.addEventListener('change', () => {
+  palmFile = palmInput.files[0];
+  previewImage.src = URL.createObjectURL(palmFile);
+  previewBox.classList.remove('hidden');
+  addMsg('Shubh AI', 'Palm image received. Ask your question.');
+});
+
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+
+  if (!palmFile) {
+    addMsg('Shubh AI', 'Please upload your palm image first.');
+    return;
+  }
+
+  addMsg('You', text, true);
+  chatInput.value = '';
+
+  const fd = new FormData();
+  fd.append('palm_image', palmFile);
+  fd.append('user_questions', text);
+
+  addMsg('Shubh AI', 'Analyzing your palm...');
+
+  const res = await fetch('http://127.0.0.1:8000/ai-palm-reading-lite', {
+    method: 'POST',
+    body: fd
+  });
+
+  const data = await res.json();
+   console.log("FULL API RESPONSE:", data);
+  if (data.data) {
+    const d = data.data;
+
+if (typeof d === "string") {
+  addMsg('Shubh AI', d);
+} else if (d.answers) {
+  addMsg('Shubh AI', d.answers);
+} else {
+  addMsg('Shubh AI', 'Palm reading completed.');
+}
+
+  } else {
+    addMsg('Shubh AI', 'Something went wrong.');
+  }
+}
+
+function addMsg(sender, text, user=false) {
+  const div = document.createElement('div');
+  div.className = `rounded-xl p-3 max-w-lg ${user ? 'bg-amber-400 text-black ml-auto' : 'bg-white/10'}`;
+  div.innerHTML = `<b class='${user ? '' : 'text-amber-400'}'>${sender}:</b> ${text}`;
+  chatBox.appendChild(div);
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+</script>
+
+</body>
+</html>

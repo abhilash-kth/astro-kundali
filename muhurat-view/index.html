@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>ShubhAI™ – AI Muhurat Intelligence</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: "#F59E0B",
+            cosmic: "#0B1020"
+          },
+          boxShadow: {
+            brand: "0 0 45px rgba(245,158,11,.35)"
+          }
+        }
+      }
+    }
+  </script>
+</head>
+
+<body class="min-h-screen bg-gradient-to-br from-[#060A14] via-[#0B1020] to-black text-white flex items-center justify-center p-4">
+
+  <!-- BRAND CARD -->
+  <div class="w-full max-w-4xl bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 shadow-brand p-10">
+
+    <!-- BRAND HEADER -->
+    <div class="flex flex-col items-center text-center mb-10">
+      <div class="w-14 h-14 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-black text-2xl font-bold shadow-brand">
+        ॐ
+      </div>
+
+      <h1 class="text-4xl font-bold mt-4 bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
+        ShubhAI™
+      </h1>
+
+      <p class="text-xs uppercase tracking-[0.3em] text-amber-400 mt-2">
+        AI · Vedic · Panchang
+      </p>
+
+      <p class="text-gray-400 mt-4 max-w-xl">
+        Precision-driven auspicious timings generated using
+        <span class="text-white">Vedic Astrology</span> and
+        <span class="text-white">Artificial Intelligence</span>
+      </p>
+    </div>
+
+    <!-- FORM -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div>
+        <label class="text-xs text-gray-400">Start Date</label>
+        <input id="startDate" type="date"
+          class="mt-2 w-full rounded-xl bg-black/40 border border-white/10 px-4 py-3 focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+      </div>
+
+      <div>
+        <label class="text-xs text-gray-400">End Date</label>
+        <input id="endDate" type="date"
+          class="mt-2 w-full rounded-xl bg-black/40 border border-white/10 px-4 py-3 focus:ring-2 focus:ring-amber-400 focus:outline-none" />
+      </div>
+
+      <div>
+        <label class="text-xs text-gray-400">Ceremony Type</label>
+        <select id="requestType"
+          class="mt-2 w-full rounded-xl
+           bg-black/60 text-white
+           border border-white/20
+           px-4 py-3 pr-10
+           focus:ring-2 focus:ring-amber-400 focus:outline-none
+           appearance-none
+           [&>option]:bg-[#0B1020]
+           [&>option]:text-white">
+          <option value="marriage">Marriage</option>
+          <option value="business">Business</option>
+          <option value="griha_pravesh">Griha Pravesh</option>
+          <option value="mundan">Mundan</option>
+          <option value="naamkaran">Namkaran</option>
+          <option value="upanayan">Upanayan</option>
+          <option value="satyanarayan">Satyanarayan Path</option>
+          <option value="engagement">Engagement</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- CTA -->
+    <button onclick="generateMuhurat()"
+      class="relative w-full mt-10 py-4 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-black font-semibold text-lg tracking-wide overflow-hidden group">
+      <span class="relative z-10">Generate Auspicious Muhurat</span>
+      <span class="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition"></span>
+    </button>
+
+    <!-- LOADING -->
+    <div id="loading" class="hidden mt-8 flex justify-center items-center gap-3 text-amber-400">
+      <div class="w-5 h-5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+      <span>Consulting Panchang Intelligence…</span>
+    </div>
+
+    <!-- RESULTS -->
+    <div id="result" class="mt-10 space-y-5"></div>
+
+    <!-- FOOTER -->
+    <div class="mt-14 pt-6 border-t border-white/10 text-center text-xs text-gray-500">
+      © 2025 ShubhAI™ · Powered by AI & Vedic Astrology  
+      <br />
+      शुभं करोति कल्याणं
+    </div>
+
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
