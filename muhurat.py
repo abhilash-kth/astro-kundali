@@ -47,8 +47,8 @@ OPENAI_MODEL = "gpt-4o"
 
 IST = pytz.timezone("Asia/Kolkata")
 
-app = FastAPI(title="Generic Muhurat Range API")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app = FastAPI()
+# app.mount("/static", StaticFiles(directory="static"), name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -489,7 +489,8 @@ def ai_muhurat_range(
             start_date=start_date,
             end_date=end_date
         )
-        pdf_url = f"http://127.0.0.1:8000/{pdf_path}"
+        pdf_filename = os.path.basename(pdf_path)
+        pdf_url = f"http://127.0.0.1:8000/static/{pdf_filename}"
         return {
             "status": "success",
             "request_type": user_request,

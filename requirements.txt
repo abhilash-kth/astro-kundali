@@ -1,95 +1,43 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Shubh AI • Palm Reading</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gradient-to-br from-black via-slate-900 to-black min-h-screen text-white">
-
-  <!-- Header -->
-  <header class="p-6 border-b border-white/10">
-    <h1 class="text-2xl font-bold tracking-wide">🔮 Shubh AI</h1>
-    <p class="text-sm text-gray-400">Palm Reading & Astrology Assistant</p>
-  </header>
-
-  <!-- Main Layout -->
-  <main class="grid grid-cols-1 lg:grid-cols-3 gap-6 p-6 max-w-7xl mx-auto">
-
-    <!-- Palm Upload Section -->
-    <section class="lg:col-span-1 bg-white/5 rounded-2xl p-5 border border-white/10">
-      <h2 class="text-lg font-semibold mb-3">Upload Your Palm</h2>
-
-      <label class="flex flex-col items-center justify-center h-56 border-2 border-dashed border-white/20 rounded-xl cursor-pointer hover:border-amber-400 transition">
-        <input type="file" accept="image/*" class="hidden" id="palmInput" />
-        <span class="text-gray-400 text-sm">Click to upload palm image</span>
-      </label>
-
-      <!-- Preview -->
-      <div id="previewBox" class="hidden mt-4">
-        <p class="text-xs text-gray-400 mb-1">Uploaded Image</p>
-        <img id="previewImage" class="rounded-xl border border-white/10" />
-      </div>
-    </section>
-
-    <!-- Chat Section -->
-    <section class="lg:col-span-2 bg-white/5 rounded-2xl p-5 border border-white/10 flex flex-col">
-      <h2 class="text-lg font-semibold mb-3">Chat with Shubh AI</h2>
-
-      <!-- Messages -->
-      <div id="chatBox" class="flex-1 space-y-4 overflow-y-auto pr-2">
-        <div class="bg-white/10 rounded-xl p-3 max-w-lg">
-          <p class="text-sm"><span class="font-semibold text-amber-400">Shubh AI:</span> Welcome. Please upload your palm image and ask your questions.</p>
-        </div>
-      </div>
-
-      <!-- Input -->
-      <div class="mt-4 flex gap-2">
-        <input id="chatInput" type="text" placeholder="Ask about marriage, career, health..." class="flex-1 rounded-xl bg-black/40 border border-white/10 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-amber-400" />
-        <button onclick="sendMessage()" class="bg-amber-400 text-black px-5 py-3 rounded-xl font-semibold hover:bg-amber-300 transition">Send</button>
-      </div>
-    </section>
-
-  </main>
-
-  <!-- Scripts -->
-  <script>
-    const palmInput = document.getElementById('palmInput');
-    const previewBox = document.getElementById('previewBox');
-    const previewImage = document.getElementById('previewImage');
-    const chatBox = document.getElementById('chatBox');
-    const chatInput = document.getElementById('chatInput');
-
-    palmInput.addEventListener('change', () => {
-      const file = palmInput.files[0];
-      if (!file) return;
-      previewImage.src = URL.createObjectURL(file);
-      previewBox.classList.remove('hidden');
-
-      addMessage('Shubh AI', 'Palm image received. You may now ask your questions.');
-    });
-
-    function sendMessage() {
-      const text = chatInput.value.trim();
-      if (!text) return;
-
-      addMessage('You', text, true);
-      chatInput.value = '';
-
-      setTimeout(() => {
-        addMessage('Shubh AI', 'Based on your palm, this question relates to personal tendencies. A detailed response will appear here after analysis.');
-      }, 800);
-    }
-
-    function addMessage(sender, text, isUser = false) {
-      const div = document.createElement('div');
-      div.className = `rounded-xl p-3 max-w-lg ${isUser ? 'bg-amber-400 text-black ml-auto' : 'bg-white/10'}`;
-      div.innerHTML = `<p class="text-sm"><span class="font-semibold ${isUser ? '' : 'text-amber-400'}">${sender}:</span> ${text}</p>`;
-      chatBox.appendChild(div);
-      chatBox.scrollTop = chatBox.scrollHeight;
-    }
-  </script>
-
-</body>
-</html>
+annotated-doc==0.0.4
+annotated-types==0.7.0
+anyio==4.12.1
+blinker==1.9.0
+certifi==2026.1.4
+charset-normalizer==3.4.4
+click==8.3.1
+colorama==0.4.6
+distro==1.9.0
+fastapi==0.128.3
+Flask==3.1.2
+groq==1.0.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.11
+itsdangerous==2.2.0
+Jinja2==3.1.6
+jiter==0.13.0
+jplephem==2.24
+MarkupSafe==3.0.3
+numpy==2.4.2
+openai==2.17.0
+pillow==12.1.0
+pydantic==2.12.5
+pydantic_core==2.41.5
+pyswisseph==2.10.3.2
+python-dateutil==2.9.0.post0
+python-multipart==0.0.22
+pytz==2025.2
+reportlab==4.4.9
+requests==2.32.5
+sgp4==2.25
+six==1.17.0
+skyfield==1.54
+sniffio==1.3.1
+starlette==0.52.1
+tqdm==4.67.3
+typing-inspection==0.4.2
+typing_extensions==4.15.0
+urllib3==2.6.3
+uvicorn==0.40.0
+Werkzeug==3.1.5
