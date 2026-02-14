@@ -72,11 +72,11 @@ async function sendMessage() {
 
   addMsg('Shubh AI', 'Analyzing your palm...');
 
-  const res = await fetch('http://127.0.0.1:8000/ai-palm-reading-lite', {
+  const res = await fetch('http://127.0.0.1:8000/muhurat/ai-palm-reading-lite', {
     method: 'POST',
     body: fd
   });
-
+  console.log(res)
   const data = await res.json();
    console.log("FULL API RESPONSE:", data);
   if (data.data) {

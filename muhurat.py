@@ -25,6 +25,8 @@ from reportlab.lib.units import inch
 import os
 from reportlab.lib.colors import HexColor
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from pdf2image import convert_from_bytes
 
 
 ORANGE = HexColor("#F57C00")   # Hindu orange
@@ -43,7 +45,7 @@ swe.set_ephe_path(r"D:\python\astro-py\ephe")
 
 OPENAI_API_KEY = "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"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-OPENAI_MODEL = "gpt-4o"
+OPENAI_MODEL = "gpt-4.1-mini"
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -123,6 +125,53 @@ ABHUJ_MUHURAT_DATES = {
 KHARMAAS_RANGES = [
     ("2025-12-15", "2026-01-15")
 ]
+# -------------------------------------------------
+# PALMISTRY KNOWLEDGE BASE
+# -------------------------------------------------
+PALMISTRY_KNOWLEDGE = {
+    "heart_line": {
+        "clear": "indicating strong emotional intelligence, stable relationships, empathy, and a caring personality",
+        "faint": "may suggest emotional sensitivity, cautious approach to relationships, or hidden feelings",
+        "long": "shows deep emotional connections and the ability to love deeply",
+        "short": "may indicate self-focus in relationships or practical approach to love",
+        "curved": "indicating warmth, compassion, and adaptability in emotional matters",
+        "straight": "suggesting control over emotions and logical approach to relationships"
+    },
+    "head_line": {
+        "clear": "reflecting strong intellect, focus, and clarity of thought",
+        "faint": "may indicate indecision or scattered thinking",
+        "long": "shows thorough thinking, persistence, and strong memory",
+        "short": "may suggest practical thinking or preference for quick decisions",
+        "curved": "indicating creativity, imagination, and flexible thinking",
+        "straight": "suggesting analytical mind, logical reasoning, and focus on facts"
+    },
+    "life_line": {
+        "clear": "reflecting vitality, stability, and zest for life",
+        "faint": "may indicate sensitivity, cautious approach to health, or low physical energy",
+        "long": "suggesting robust health and endurance",
+        "short": "may indicate vulnerability or reliance on careful lifestyle choices",
+        "deep": "shows strong life energy and determination",
+        "broken": "can suggest periods of major change or obstacles in life",
+        "curved": "indicating adaptability and adventurous nature"
+    },
+    "fate_line": {
+        "clear": "indicating strong career path, life direction, and personal responsibility",
+        "faint": "may suggest uncertainties or changes in career or life path",
+        "long": "shows consistent work and dedication over time",
+        "short": "may suggest a more flexible or varied life path",
+        "straight": "reflecting focus on goals and perseverance",
+        "broken": "can indicate unexpected changes or life transitions"
+    },
+    "marriage_line": {
+        "clear": "suggesting stable relationships, potential for marriage, and meaningful partnerships",
+        "faint": "may indicate delayed or cautious approach to commitment",
+        "single": "reflecting single or independent nature",
+        "multiple": "may suggest multiple significant relationships or experiences",
+        "short": "practical approach to relationships",
+        "long": "deep emotional connection with partners"
+    },
+    "answers": "Overall, this palm shows a combination of emotional stability, intellectual clarity, life energy, and potential for meaningful relationships. Each line gives insights into personality traits, career tendencies, and relationship patterns based on classical palmistry."
+}
 
 def approx_tokens(text: str) -> int:
     return len(text)
@@ -237,12 +286,74 @@ def log_prompt_size(prompt: str, count: int):
 # -------------------------------------------------
 # AI CALL (EXPLANATION ONLY)
 # -------------------------------------------------
+# def call_openai(muhurats, user_request):
+#     if not muhurats:
+#         return []
+    
+#     if len(muhurats) > MAX_MUHURATS:
+#      muhurats = muhurats[:MAX_MUHURATS]
+
+#     slots_str = "\n".join(
+#         f"{m['start']} → {m['end']} | {m['nakshatra']}"
+#         for m in muhurats
+#     )
+#     logger.info("Formatted slots string (first 500 chars):\n%s", slots_str[:500])
+     
+#     # breakpoint()  # STEP 2: Check slots_str formatting
+#     prompt = f"""
+# You are a Vedic Panchang expert and a Hindu astrology specialist.
+# Below are already-validated muhurat windows for "{user_request}".
+# Follow Hindu calendar rules (Tithi, Nakshatra, Karana, Yoga, Abhuj Muhurat, Rahu Kalam, Gulika) to provide explanations.
+# Do NOT reject or add new slots.
+# For each slot, give a short explanation why it is auspicious for this event according to Panchang.
+# Do NOT reject or add any slot.
+# Only add a short explanation for each.
+
+# Return ONLY valid JSON array.
+# Each item MUST be an object with keys:
+# start, end, nakshatra, explanation
+
+# Example:
+# [
+#   {{
+#     "start": "2025-11-01 06:00 AM",
+#     "end": "2025-11-01 10:00 AM",
+#     "nakshatra": "Rohini",
+#     "explanation": "Good for marriage..."
+#   }}
+# ]
+
+# Muhurats:
+# {slots_str}
+# """
+
+#     log_prompt_size(prompt, len(muhurats))
+
+#     r = requests.post(
+#         OPENAI_URL,
+#         headers={
+#             "Authorization": f"Bearer {OPENAI_API_KEY}",
+#             "Content-Type": "application/json"
+#         },
+#         json={
+#             "model": OPENAI_MODEL,
+#             "messages": [{"role": "user", "content": prompt}],
+#             "temperature": 0.2
+#         },
+#         timeout=30
+#     )
+
+#     r.raise_for_status()
+#     text = r.json()["choices"][0]["message"]["content"]
+
+#     match = re.search(r"\[.*\]", text, re.DOTALL)
+#     return json.loads(match.group(0)) if match else []
 def call_openai(muhurats, user_request):
     if not muhurats:
-        return []
+        return [], {"prompt_tokens":0, "completion_tokens":0, "total_tokens":0, "cost_inr":0}
     
     if len(muhurats) > MAX_MUHURATS:
-     muhurats = muhurats[:MAX_MUHURATS]
+        muhurats = muhurats[:MAX_MUHURATS]
 
     slots_str = "\n".join(
         f"{m['start']} → {m['end']} | {m['nakshatra']}"
@@ -250,7 +361,6 @@ def call_openai(muhurats, user_request):
     )
     logger.info("Formatted slots string (first 500 chars):\n%s", slots_str[:500])
      
-    # breakpoint()  # STEP 2: Check slots_str formatting
     prompt = f"""
 You are a Vedic Panchang expert and a Hindu astrology specialist.
 Below are already-validated muhurat windows for "{user_request}".
@@ -265,14 +375,7 @@ Each item MUST be an object with keys:
 start, end, nakshatra, explanation
 
 Example:
-[
-  {{
-    "start": "2025-11-01 06:00 AM",
-    "end": "2025-11-01 10:00 AM",
-    "nakshatra": "Rohini",
-    "explanation": "Good for marriage..."
-  }}
-]
+[{{ "start": "2025-11-01 06:00 AM", "end": "2025-11-01 10:00 AM", "nakshatra": "Rohini", "explanation": "Good for marriage..." }}]
 
 Muhurats:
 {slots_str}
@@ -295,10 +398,40 @@ Muhurats:
     )
 
     r.raise_for_status()
-    text = r.json()["choices"][0]["message"]["content"]
+    response_json = r.json()
 
+    # ---- Extract tokens & cost ----
+       # ---- Extract tokens & cost ----
+    usage = response_json.get("usage", {})
+    prompt_tokens = usage.get("prompt_tokens", 0)
+    completion_tokens = usage.get("completion_tokens", 0)
+    total_tokens = usage.get("total_tokens", 0)
+
+    # ---- GPT-4.1-mini pricing ----
+    INPUT_COST_PER_1K = 0.00015
+    OUTPUT_COST_PER_1K = 0.0006
+    USD_TO_INR = 83
+
+    cost_usd = (
+        (prompt_tokens / 1000) * INPUT_COST_PER_1K +
+        (completion_tokens / 1000) * OUTPUT_COST_PER_1K
+    )
+
+    cost_inr = round(cost_usd * USD_TO_INR, 4)
+
+
+    # ---- Parse AI output ----
+    text = response_json["choices"][0]["message"]["content"]
     match = re.search(r"\[.*\]", text, re.DOTALL)
-    return json.loads(match.group(0)) if match else []
+    ai_output = json.loads(match.group(0)) if match else []
+
+    return ai_output, {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "cost_inr": cost_inr
+    }
+
 
 # -------------------------------------------------
 # API ENDPOINT
@@ -470,19 +603,47 @@ def generate_muhurat_pdf(muhurats, request_type, start_date, end_date):
 
 # ai-muhurat generator
 
+# @app.get("/ai-muhurat-range")
+# def ai_muhurat_range(
+#     start_date: str,
+#     end_date: str,
+#     user_request: str = "general"
+# ):
+#     try:
+#         sdt = datetime.strptime(start_date, "%Y-%m-%d").date()
+#         edt = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+#         raw = generate_muhurats(sdt, edt, user_request)
+#         ai_raw = call_openai(raw, user_request)
+#         final = format_muhurats_response(ai_raw, user_request)["recommended_muhurats"]
+#         pdf_path = generate_muhurat_pdf(
+#             muhurats=final,
+#             request_type=user_request,
+#             start_date=start_date,
+#             end_date=end_date
+#         )
+#         pdf_filename = os.path.basename(pdf_path)
+#         pdf_url = f"http://127.0.0.1:8000/static/{pdf_filename}"
+#         return {
+#             "status": "success",
+#             "request_type": user_request,
+#             "recommended_muhurats": final,
+#             "pdf_url": pdf_url   # ONLY addition
+#         }
+
+#     except Exception as e:
+#         logger.error("Error: %s", e)
+#         raise HTTPException(status_code=500, detail=str(e))
 @app.get("/ai-muhurat-range")
-def ai_muhurat_range(
-    start_date: str,
-    end_date: str,
-    user_request: str = "general"
-):
+def ai_muhurat_range(start_date: str, end_date: str, user_request: str = "general"):
     try:
         sdt = datetime.strptime(start_date, "%Y-%m-%d").date()
         edt = datetime.strptime(end_date, "%Y-%m-%d").date()
 
         raw = generate_muhurats(sdt, edt, user_request)
-        ai_raw = call_openai(raw, user_request)
+        ai_raw, token_info = call_openai(raw, user_request)
         final = format_muhurats_response(ai_raw, user_request)["recommended_muhurats"]
+
         pdf_path = generate_muhurat_pdf(
             muhurats=final,
             request_type=user_request,
@@ -491,27 +652,37 @@ def ai_muhurat_range(
         )
         pdf_filename = os.path.basename(pdf_path)
         pdf_url = f"http://127.0.0.1:8000/static/{pdf_filename}"
+
         return {
             "status": "success",
             "request_type": user_request,
             "recommended_muhurats": final,
-            "pdf_url": pdf_url   # ONLY addition
+            "pdf_url": pdf_url,
+            "tokens_used": token_info  # <-- NEW FIELD
         }
 
     except Exception as e:
         logger.error("Error: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
 
+
 # ai-palm-reading-lite
 def optimize_palm_image(image_bytes: bytes) -> bytes:
     logger.info("IMAGE INPUT SIZE (bytes): %d", len(image_bytes))
-    img = Image.open(io.BytesIO(image_bytes)).convert("L")
-    img.thumbnail((512, 512))
+
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+    # keep details of palm lines
+    img.thumbnail((1024, 1024))
+
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=55, optimize=True)
-    optimized=buf.getvalue()
+    img.save(buf, format="JPEG", quality=85)
+
+    optimized = buf.getvalue()
     logger.info("IMAGE OPTIMIZED SIZE (bytes): %d", len(optimized))
+
     return optimized
+
 
 def safe_json_from_ai(text: str):
     try:
@@ -526,102 +697,1046 @@ def safe_json_from_ai(text: str):
         return {
             "answers": text.strip()
         }
-def build_palm_prompt(q: str):
+
+# validation
+def validate_palm_image_with_ai(base64_image: str):
+    """
+    Industry-grade validation using Vision AI.
+    Checks:
+    - Real human hand
+    - Palm facing camera
+    - Close-up
+    - Lines visible
+    """
+
+    prompt = """
+You are an image validation system.
+
+Check the image and return ONLY JSON:
+
+{
+  "is_palm": true/false,
+  "confidence": 0-100,
+  "reason": "short reason"
+}
+
+Validation rules:
+Return is_palm = false if:
+- Not a human hand
+- Back of hand
+- Side view
+- Object, face, document, etc.
+- Palm is far away
+- Palm lines not visible
+- Blurry or low quality
+
+Return is_palm = true only if:
+- Clear human palm
+- Palm facing camera
+- Close-up
+- Major palm lines visible
+"""
+
+    try:
+        r = requests.post(
+            OPENAI_URL,
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": OPENAI_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0
+            },
+            timeout=20
+        )
+
+        r.raise_for_status()
+        result = r.json()["choices"][0]["message"]["content"]
+        return json.loads(result)
+
+    except Exception as e:
+        logger.error("Palm validation AI error: %s", e)
+        return {
+            "is_palm": False,
+            "confidence": 0,
+            "reason": "Image validation failed"
+        }
+    # ///////////////////////////
+
+KNOWLEDGE_BASE = """
+You are an expert palm reader with 20 years of experience.
+
+Analyze the palm image carefully and provide a personalized reading.
+
+Rules:
+- Base interpretation only on visible palm lines.
+- Avoid generic statements.
+- Do not say "may suggest", "typically", or "generally".
+- Write in a confident but realistic tone.
+- Focus on customer insights:
+    - Personality traits
+    - Career tendencies
+    - Relationship behavior
+    - Life outlook
+- Each line must contain specific interpretation.
+- Return JSON format:
+
+{
+  "status": "success",
+  "heart_line": "...",
+  "head_line": "...",
+  "life_line": "...",
+  "fate_line": "...",
+  "marriage_line": "...",
+  "answers": "Overall personalized summary"
+}
+"""
+
+
+# //////////////////////////////////////////////
+# Palm prompt
+def build_palm_prompt(user_question: str):
+    """
+    Build a prompt that instructs the AI to read visible palm lines
+    and give palmistry-based interpretations for each major line.
+    """
     prompt = f"""
-You are an expert palmist and experienced astrologer with deep knowledge of traditional palmistry.
-Your analysis should feel natural, genuine, and based on real palm-reading principles.
+You are an expert palmist with deep knowledge of traditional palmistry.
 
-STRICT OUTPUT RULES:
-- Return ONLY valid JSON
-- No markdown
-- No text outside JSON
-- Never mention that you are an AI
-
-ANALYSIS GUIDELINES:
-- If palm lines are clear:
-    - Describe them in a calm, professional tone
-    - Use phrases like "often indicates", "commonly associated with"
-- If palm lines are faint or unclear:
-    - Still give meaningful analysis
-    - Use general palmistry tendencies
-    - Use soft language like:
-        "may suggest", "generally points toward", "can indicate"
-- NEVER leave any field empty
-- NEVER say only "Not clearly visible"
-- Do NOT give exact dates, ages, or guarantees
-- Do NOT exaggerate or make dramatic claims
-- Keep answers balanced, positive, and realistic
-
-RESPONSE STYLE:
-- Sound like a real palm reader explaining observations
-- Avoid absolute statements
-- Focus on possibilities and tendencies
-- Favor the user gently, without false promises
-
-JSON SCHEMA:
+STEP 1 — Validate image:
+- Only proceed if the palm is clear and all major lines are visible.
+- If not, return ONLY:
 {{
+  "status": "invalid_image",
+  "message": "Palm lines are not clearly visible"
+}}
+
+STEP 2 — Analyze palm lines:
+- For each major line (heart, head, life, fate, marriage):
+  1. Mention if it is visible and clear.
+  2. Provide a palmistry interpretation based on traditional knowledge.
+- Avoid any assumptions about unseen lines.
+- Do NOT leave fields empty.
+- Keep it realistic, positive, and professional.
+
+Return ONLY JSON with this schema:
+
+{{
+  "status": "success",
   "heart_line": "",
   "head_line": "",
   "life_line": "",
   "fate_line": "",
   "marriage_line": "",
-  "answers": ""
+  "answers": "Summary of all line insights"
 }}
 
 User question:
-{q}
+{user_question}
 """
     return prompt
 
 
+def build_customer_summary(enriched):
+    insights = []
 
-def call_openai_palm_reader(base64_image: str, user_questions: str):
-    logger.info("BASE64 IMAGE CHARS: %d", len(base64_image))
-    logger.info("BASE64 IMAGE TOKENS (approx): %d", approx_tokens(base64_image))
+    # Personality
+    if "emotional intelligence" in enriched["heart_line"].lower():
+        insights.append("You are emotionally balanced, caring, and value deep relationships.")
 
-    prompt = build_palm_prompt(user_questions)
+    if "clarity of thought" in enriched["head_line"].lower() or "intellect" in enriched["head_line"].lower():
+        insights.append("You have a practical and intelligent mindset, and you make thoughtful decisions.")
 
-    logger.info("CALLING OPENAI MODEL: %s", OPENAI_MODEL)
+    # Life Energy
+    if "life energy" in enriched["life_line"].lower() or "vitality" in enriched["life_line"].lower():
+        insights.append("You possess strong inner strength and the ability to handle challenges in life.")
 
-    r = requests.post(
-        OPENAI_URL,
-        headers={
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json"
-        },
-        json={
-            "model": OPENAI_MODEL,
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {
-                        "url": f"data:image/jpeg;base64,{base64_image}"
-                    }}
-                ]
-            }],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.1,
-            "max_tokens": 180
-        },
-        timeout=30
+    # Career
+    if "uncertainties" in enriched["fate_line"].lower() or "changes" in enriched["fate_line"].lower():
+        insights.append("Your career path may include changes, but adaptability will bring growth and success.")
+    else:
+        insights.append("Your career path shows stability and steady progress through your efforts.")
+
+    # Relationships
+    if "stable relationships" in enriched["marriage_line"].lower() or "deep emotional connection" in enriched["marriage_line"].lower():
+        insights.append("You are loyal in relationships and likely to build long-term meaningful partnerships.")
+
+    # Final overall message
+    insights.append(
+        "Overall, your palm reflects a balanced personality with strong potential for personal growth, career success, and stable relationships."
     )
 
-    r.raise_for_status()
+    return " ".join(insights)
 
-    content = r.json()["choices"][0]["message"]["content"]
-    logger.info("OPENAI RAW RESPONSE TEXT: %s", content)
+
+def build_platinum_palm_reading(data):
+    personality = []
+    career = []
+    love = []
+    health = []
+    life_path = []
+    lucky_traits = []
+    recommendations = []
+
+    # ---------------- Personality ----------------
+    if "curved" in data["heart_line"].lower():
+        personality.append(
+            "You possess a warm and compassionate nature, expressing emotions sincerely and connecting deeply with others. "
+            "Empathy is your guiding strength."
+        )
+        lucky_traits.append("Empathy, Charisma, Emotional Intelligence")
+    if "straight" in data["head_line"].lower():
+        personality.append(
+            "You have a practical and logical mindset, approaching challenges with clarity, reason, and well-structured planning."
+        )
+        lucky_traits.append("Analytical Skills, Discipline")
+    if "curved" in data["head_line"].lower():
+        personality.append(
+            "Creativity and adaptability define your thinking, allowing you to find innovative solutions in complex situations."
+        )
+        lucky_traits.append("Creativity, Innovation, Versatility")
+    if not personality:
+        personality.append(
+            "You possess a balanced personality harmonizing emotional insight with practical intelligence."
+        )
+
+    # ---------------- Career ----------------
+    if "clear" in data["fate_line"].lower() or "long" in data["fate_line"].lower():
+        career.append(
+            "Your professional journey reflects stability and focused growth. Strategic planning and consistent effort will yield high achievements."
+        )
+        recommendations.append(
+            "Engage in leadership roles, mentorship, or strategic planning to maximize career potential."
+        )
+    if "broken" in data["fate_line"].lower():
+        career.append(
+            "Your career may involve significant transitions, requiring resilience and adaptability. Each change is an opportunity for growth."
+        )
+        recommendations.append(
+            "Be open to learning new skills and exploring diverse roles."
+        )
+    if "faint" in data["fate_line"].lower():
+        career.append(
+            "Your career success depends largely on self-driven effort, innovation, and perseverance."
+        )
+        recommendations.append(
+            "Invest in skill development, networking, and personal projects to strengthen professional growth."
+        )
+    if "long" in data["head_line"].lower():
+        career.append(
+            "Analytical, technical, and managerial roles align naturally with your abilities. You thrive in structured and challenging environments."
+        )
+    if "curved" in data["head_line"].lower():
+        career.append(
+            "Creative, communication-oriented, and business leadership roles are highly suitable. You excel where innovation is valued."
+        )
+    if not career:
+        career.append(
+            "Career growth is influenced by determination, adaptability, and informed decision-making."
+        )
+
+    # ---------------- Love / Relationships ----------------
+    if "multiple" in data["marriage_line"].lower():
+        love.append(
+            "Your life may feature several significant relationships, each providing unique lessons in emotional growth and understanding."
+        )
+        recommendations.append(
+            "Embrace experiences with openness and learn from past relationship patterns."
+        )
+    if "clear" in data["marriage_line"].lower():
+        love.append(
+            "You are capable of long-lasting, loyal, and emotionally fulfilling relationships."
+        )
+        lucky_traits.append("Commitment, Trustworthiness")
+    if "faint" in data["marriage_line"].lower():
+        love.append(
+            "You may take time before committing, seeking emotional alignment and mutual understanding."
+        )
+        recommendations.append(
+            "Focus on clear communication and self-awareness to nurture strong partnerships."
+        )
+    if "long" in data["heart_line"].lower():
+        love.append(
+            "Deep emotional connection and sincerity are core to your relationships. You value trust and heartfelt communication."
+        )
+        lucky_traits.append("Emotional Depth, Loyalty")
+
+    if not love:
+        love.append(
+            "You seek meaningful, balanced, and emotionally fulfilling relationships."
+        )
+
+    # ---------------- Health / Vitality ----------------
+    if "deep" in data["life_line"].lower() or "long" in data["life_line"].lower():
+        health.append(
+            "Strong vitality and physical endurance mark your constitution. Regular exercise and mindful nutrition will enhance longevity."
+        )
+        recommendations.append(
+            "Incorporate holistic practices like yoga, meditation, and balanced diet."
+        )
+    if "faint" in data["life_line"].lower():
+        health.append(
+            "Maintaining energy and wellness requires conscious effort. Lifestyle balance is essential."
+        )
+        recommendations.append(
+            "Focus on structured routines, rest, and stress management."
+        )
+    if "broken" in data["life_line"].lower():
+        health.append(
+            "Life may include periods of stress or major lifestyle changes. Adaptability and health monitoring are key."
+        )
+        recommendations.append(
+            "Prioritize preventive care and regular health check-ups."
+        )
+    if not health:
+        health.append(
+            "A disciplined lifestyle and awareness of well-being will support long-term vitality."
+        )
+
+    # ---------------- Life Path ----------------
+    if "clear" in data["life_line"].lower() and "clear" in data["fate_line"].lower():
+        life_path.append(
+            "Your life path shows stability, clarity, and consistent progress. Steady effort and perseverance lead to personal fulfillment."
+        )
+        lucky_traits.append("Stability, Determination")
+    else:
+        life_path.append(
+            "Your journey may involve changes and adaptations. Flexibility, resilience, and learning from experiences will bring success."
+        )
+        recommendations.append(
+            "Embrace change with a positive mindset and continuous learning."
+        )
+
+    # ---------------- Elemental Influence ----------------
+    elements = []
+    if "curved" in data["heart_line"].lower():
+        elements.append("Water - Emotional depth and intuition guide your life choices.")
+    if "straight" in data["head_line"].lower():
+        elements.append("Air - Logic, intellect, and strategic thinking define your path.")
+    if "curved" in data["head_line"].lower():
+        elements.append("Fire - Creativity, passion, and initiative fuel your ambitions.")
+
+    return {
+        "personality": " ".join(personality),
+        "career": " ".join(career),
+        "love": " ".join(love),
+        "health": " ".join(health),
+        "life_path": " ".join(life_path),
+        "lucky_traits": ", ".join(lucky_traits) if lucky_traits else "Adaptability, Awareness",
+        "elemental_influence": " ".join(elements) if elements else "Earth - Stability and grounding shape your life.",
+        "recommendations": " ".join(recommendations) if recommendations else "Maintain balance across personal, professional, and health aspects for a fulfilled life."
+    }
+
+
+
+# -------------------------------
+# Helper: Map AI description to knowledge base
+# -------------------------------
+
+# ------------------------------- 
+# Helper: enrich raw AI response using PALMISTRY_KNOWLEDGE
+# -------------------------------
+
+def enrich_with_knowledge(palm_data):
+    """
+    Enrich palm_data with detailed knowledge and premium insights.
+    """
+    enriched = {}
+
+    # ---------------- Detailed line meanings ----------------
+    for line in ["heart_line", "head_line", "life_line", "fate_line", "marriage_line"]:
+        ai_text = palm_data.get(line, "").strip()
+        key = "clear"  # default
+
+        # Detect first matching keyword in text
+        for keyword in ["faint", "curved", "straight", "deep", "broken", "long", "short", "single", "multiple"]:
+            if keyword in ai_text.lower():
+                key = keyword
+                break
+
+        # Attach knowledge from PALMISTRY_KNOWLEDGE if available
+        knowledge_text = PALMISTRY_KNOWLEDGE.get(line, {}).get(key, "")
+        if knowledge_text:
+            enriched[line] = f"{ai_text} ({knowledge_text})"
+        else:
+            enriched[line] = ai_text
+
+    # ---------------- Premium / Platinum insights ----------------
+    # Use upgraded platinum reading for detailed analysis
+    premium = build_platinum_palm_reading(enriched)
+
+    # Merge premium insights
+    for field in ["personality", "career", "love", "health", "life_path",
+                  "lucky_traits", "elemental_influence", "recommendations"]:
+        enriched[field] = premium.get(field, "")
+
+    # Combine main answers into one summary
+    enriched["answers"] = " ".join([
+        premium.get("personality", ""),
+        premium.get("career", ""),
+        premium.get("love", ""),
+        premium.get("health", ""),
+        premium.get("life_path", "")
+    ])
+
+    enriched["status"] = "success"
+    return enriched
+
+
+# ------------------------------- Main AI palm reading call -------------------------------
+# def call_openai_palm_reader(base64_image: str, user_questions: str):
+#     """
+#     Main AI palm reading function.
+#     Assumes palm validation already passed.
+#     Returns enriched and structured palmistry insights.
+#     """
+#     prompt = build_palm_prompt(user_questions)
+
+#     try:
+#         r = requests.post(
+#             OPENAI_URL,
+#             headers={
+#                 "Authorization": f"Bearer {OPENAI_API_KEY}",
+#                 "Content-Type": "application/json"
+#             },
+#             json={
+#                 "model": OPENAI_MODEL,
+#                 "messages": [
+#                     {"role": "system", "content": "You are a professional palmist. Return ONLY JSON."},
+#                     {"role": "user", "content": [
+#                         {"type": "text", "text": prompt},
+#                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+#                     ]}
+#                 ],
+#                 "response_format": {"type": "json_object"},
+#                 "temperature": 0.4,
+#                 "max_tokens": 700
+#             },
+#             timeout=40
+#         )
+#         r.raise_for_status()
+#         content = r.json()
+#         parsed = json.loads(content["choices"][0]["message"]["content"])
+
+#     except Exception as e:
+#         logger.error("OpenAI palm reader error: %s", str(e))
+#         return invalid_response("AI processing failed")
+
+#     # Respect invalid image response from AI
+#     if parsed.get("status") == "invalid_image":
+#         return invalid_response(parsed.get("message", "Palm lines are not clearly visible"))
+
+#     # Ensure required fields exist with safe fallback
+#     required_fields = ["heart_line", "head_line", "life_line", "fate_line", "marriage_line", "answers"]
+#     for field in required_fields:
+#         if field not in parsed or len(parsed[field].strip()) < 10:
+#             parsed[field] = f"{field.replace('_', ' ').title()} details are limited"
+
+#     # ---------------- Enrich parsed data ----------------
+#     enriched = enrich_with_knowledge(parsed)
+#     return enriched
+
+def call_openai_palm_reader(base64_image: str, user_questions: str, return_tokens: bool = False):
+    """
+    Main AI palm reading function.
+    Always returns a dictionary.
+    If return_tokens=True → returns (result_dict, token_dict)
+    """
+
+    prompt = build_palm_prompt(user_questions)
+    token_info = {}
 
     try:
-        parsed = json.loads(content)
-        logger.info("PARSED JSON KEYS: %s", list(parsed.keys()))
-        return parsed
+        r = requests.post(
+            OPENAI_URL,
+            headers={
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": OPENAI_MODEL,
+                "messages": [
+                    {"role": "system", "content": "You are a professional palmist. Return ONLY JSON."},
+                    {"role": "user", "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    ]}
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.4,
+                "max_tokens": 700
+            },
+            timeout=40
+        )
+
+        r.raise_for_status()
+        content = r.json()
+
+        # ---------------- Safe JSON Parse ----------------
+        try:
+            parsed = json.loads(content["choices"][0]["message"]["content"])
+        except Exception:
+            logger.error("AI returned invalid JSON")
+            parsed = {
+                "status": "failed",
+                "error": "AI returned invalid format"
+            }
+
+        # ---------------- Token Usage ----------------
+        if return_tokens and "usage" in content:
+            usage = content["usage"]
+            total_tokens = usage.get("total_tokens", 0)
+
+            # Example pricing (adjust if needed)
+            cost_inr = (total_tokens / 1000) * 0.002 * 83
+
+            token_info = {
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": total_tokens,
+                "cost_inr": round(cost_inr, 2)
+            }
+
+    except Exception as e:
+        logger.error("OpenAI palm reader error: %s", str(e))
+        error_response = {
+            "status": "failed",
+            "error": "AI processing failed"
+        }
+        if return_tokens:
+            return error_response, {}
+        return error_response
+
+    # ---------------- Ensure parsed is dict ----------------
+    if not isinstance(parsed, dict):
+        parsed = {
+            "status": "failed",
+            "error": "Invalid AI response"
+        }
+
+    # ---------------- Handle invalid image ----------------
+    if parsed.get("status") == "invalid_image":
+        error_response = {
+            "status": "failed",
+            "error": parsed.get("message", "Palm lines are not clearly visible")
+        }
+        if return_tokens:
+            return error_response, token_info
+        return error_response
+
+    # ---------------- Required fields fallback ----------------
+    required_fields = [
+        "heart_line",
+        "head_line",
+        "life_line",
+        "fate_line",
+        "marriage_line",
+        "answers"
+    ]
+
+    for field in required_fields:
+        if field not in parsed or not isinstance(parsed.get(field), str) or len(parsed[field].strip()) < 10:
+            parsed[field] = f"{field.replace('_', ' ').title()} details are limited"
+
+    # ---------------- Enrich Data ----------------
+    try:
+        enriched = enrich_with_knowledge(parsed)
     except Exception:
-        logger.warning("Invalid JSON from AI, fallback applied")
-        return {"answers": content.strip()}
+        enriched = parsed
+
+    if return_tokens:
+        return enriched, token_info
+
+    return enriched
 
 
 
+
+
+# ------------------------------- Helper for invalid image -------------------------------
+def invalid_response(message: str):
+    return {"status": "invalid_image", "message": message}
+
+# ////////////////////////////////////
+# Generate PDF
+# from reportlab.lib.pagesizes import A4
+# from reportlab.platypus import (
+#     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+#     Image as RLImage, PageBreak, KeepInFrame
+# )
+# from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+# from reportlab.lib.enums import TA_CENTER, TA_LEFT
+# from reportlab.lib import colors
+# from reportlab.lib.colors import HexColor
+# from reportlab.lib.units import inch
+# import os, uuid, io
+# from PIL import Image
+
+# # ==========================================
+# # COLORS
+# # ==========================================
+# BG_COLOR = HexColor("#f5f5e7")
+# BORDER_COLOR = HexColor("#eb8552")
+# HEADER_BG = HexColor("#eb8552")
+# HEADER_TEXT = colors.white
+# TEXT_COLOR = colors.black
+# GREEN_HIGHLIGHT = HexColor("#1b8f3a")
+# INSIGHT_BOX_BG = colors.white
+# BRAND_COLOR = colors.red
+# FOOTER_COLOR = HexColor("#ff6600")  # Orange
+# RECOMMENDATION_COLOR = HexColor("#ff3300")  # Red/Orange for recommendation text
+
+# # ==========================================
+# # BRAND
+# # ==========================================
+# BRAND_NAME = "KAstrofy"
+# LOCATION = "Agarwal Bhavan"
+# MOBILE = "9999999999"
+# EMAIL = "astrofy@gmail.com"
+
+# # ==========================================
+# # Highlight Keywords
+# # ==========================================
+# def highlight_keywords(text):
+#     if not text:
+#         return ""
+#     keywords = [
+#         "strong", "stable", "positive", "success",
+#         "growth", "opportunity", "health",
+#         "career", "love", "energy", "vitality",
+#         "loyalty", "creativity", "resilience"
+#     ]
+#     for word in keywords:
+#         text = text.replace(word, f'<font color="{GREEN_HIGHLIGHT}"><b>{word}</b></font>')
+#         text = text.replace(word.capitalize(), f'<font color="{GREEN_HIGHLIGHT}"><b>{word.capitalize()}</b></font>')
+#     return text
+
+# # ==========================================
+# # Background + Header + Footer
+# # ==========================================
+# def draw_page(canvas, doc):
+#     # Background
+#     canvas.setFillColor(BG_COLOR)
+#     canvas.rect(0, 0, A4[0], A4[1], fill=1)
+
+#     # Top Brand Name in BIG RED FONT
+#     canvas.setFillColor(BRAND_COLOR)
+#     canvas.setFont("Helvetica-Bold", 28)
+#     canvas.drawCentredString(A4[0] / 2, A4[1] - 35, BRAND_NAME)
+
+#     # Footer in Orange
+#     canvas.setFont("Helvetica", 9)
+#     canvas.setFillColor(FOOTER_COLOR)
+#     canvas.drawCentredString(
+#         A4[0] / 2,
+#         20,
+#         f"Location: {LOCATION} | Mobile: {MOBILE} | Email: {EMAIL}"
+#     )
+
+# ==========================================
+# Main PDF Generator
+# ==========================================
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+    Image as RLImage, PageBreak, KeepInFrame
+)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib import colors
+from reportlab.lib.colors import HexColor
+from reportlab.lib.units import inch
+import os, uuid, io
+from PIL import Image
+
+# ==========================================
+# COLORS
+# ==========================================
+BG_COLOR = HexColor("#f5f5e7")
+BORDER_COLOR = HexColor("#eb8552")
+HEADER_BG = HexColor("#eb8552")
+HEADER_TEXT = colors.white
+TEXT_COLOR = colors.black
+GREEN_HIGHLIGHT = HexColor("#1b8f3a")
+INSIGHT_BOX_BG = colors.white
+BRAND_COLOR = colors.red
+FOOTER_COLOR = HexColor("#ff6600")  # Orange
+RECOMMENDATION_COLOR = HexColor("#ff3300")  # Red/Orange for recommendation text
+
+# ==========================================
+# BRAND
+# ==========================================
+BRAND_NAME = "KAstrofy"
+LOCATION = "Agarwal Bhavan"
+MOBILE = "9999999999"
+EMAIL = "astrofy@gmail.com"
+
+# ==========================================
+# Highlight Keywords
+# ==========================================
+def highlight_keywords(text):
+    if not text:
+        return ""
+    keywords = [
+        "strong", "stable", "positive", "success",
+        "growth", "opportunity", "health",
+        "career", "love", "energy", "vitality",
+        "loyalty", "creativity", "resilience"
+    ]
+    for word in keywords:
+        text = text.replace(word, f'<font color="{GREEN_HIGHLIGHT}"><b>{word}</b></font>')
+        text = text.replace(word.capitalize(), f'<font color="{GREEN_HIGHLIGHT}"><b>{word.capitalize()}</b></font>')
+    return text
+
+# ==========================================
+# Background + Header + Footer
+# ==========================================
+def draw_page(canvas, doc):
+    # Background
+    canvas.setFillColor(BG_COLOR)
+    canvas.rect(0, 0, A4[0], A4[1], fill=1)
+
+    # Top Brand Name in BIG RED FONT
+    canvas.setFillColor(BRAND_COLOR)
+    canvas.setFont("Helvetica-Bold", 28)
+    canvas.drawCentredString(A4[0] / 2, A4[1] - 35, BRAND_NAME)
+
+    # Footer in Orange
+    canvas.setFont("Helvetica", 9)
+    canvas.setFillColor(FOOTER_COLOR)
+    canvas.drawCentredString(
+        A4[0] / 2,
+        20,
+        f"Location: {LOCATION} | Mobile: {MOBILE} | Email: {EMAIL}"
+    )
+
+# ==========================================
+# Main PDF Generator
+# ==========================================
+def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
+    os.makedirs("static", exist_ok=True)
+    file_name = f"astrofy_palm_{uuid.uuid4().hex}.pdf"
+    file_path = os.path.join("static", file_name)
+
+    CONTENT_WIDTH = 510
+    side_margin = (A4[0] - CONTENT_WIDTH) / 2
+    COLUMN_WIDTHS = [150, 360]  # Equal and consistent for both tables
+
+    doc = SimpleDocTemplate(
+        file_path,
+        pagesize=A4,
+        leftMargin=side_margin,
+        rightMargin=side_margin,
+        topMargin=70,
+        bottomMargin=50
+    )
+
+    styles = getSampleStyleSheet()
+
+    # ---------------- Styles ----------------
+    title_style = ParagraphStyle(
+        "Title",
+        parent=styles["Heading1"],
+        fontSize=18,
+        alignment=TA_CENTER,
+        textColor=TEXT_COLOR,
+        spaceAfter=12
+    )
+
+    text_style = ParagraphStyle(
+        "Text",
+        parent=styles["Normal"],
+        fontSize=11,
+        leading=15,
+        textColor=TEXT_COLOR
+    )
+
+    table_header = ParagraphStyle(
+        "Header",
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        textColor=HEADER_TEXT,
+        alignment=TA_CENTER
+    )
+
+    bold_center_style = ParagraphStyle(
+        "BoldCenter",
+        parent=text_style,
+        fontName="Helvetica-Bold",
+        alignment=TA_CENTER
+    )
+
+    insight_heading_style = ParagraphStyle(
+        "InsightHeading",
+        parent=text_style,
+        fontSize=14,
+        textColor=colors.red,
+        alignment=TA_CENTER,
+        spaceAfter=10,
+        fontName="Helvetica-Bold"
+    )
+
+    insight_value_style = ParagraphStyle(
+        "InsightValue",
+        parent=text_style,
+        fontSize=12,
+        textColor=TEXT_COLOR,
+        alignment=TA_LEFT,
+        leading=16,
+        backColor=INSIGHT_BOX_BG,
+        borderPadding=10
+    )
+
+    recommendation_style = ParagraphStyle(
+        "Recommendation",
+        parent=text_style,
+        fontSize=12,
+        textColor=RECOMMENDATION_COLOR,
+        alignment=TA_LEFT,
+        leading=16
+    )
+
+    elements = []
+
+    # ---------------- Page 1 → Tables ----------------
+    elements.append(Paragraph("KAstrofy Palm Reading Report", title_style))
+
+    # Palm Lines Table
+    line_data = [
+        [Paragraph("Palm Line", table_header), Paragraph("Detailed Meaning", table_header)],
+        [Paragraph("Heart Line", bold_center_style), Paragraph(highlight_keywords(palm_data.get("heart_line", "")), text_style)],
+        [Paragraph("Head Line", bold_center_style), Paragraph(highlight_keywords(palm_data.get("head_line", "")), text_style)],
+        [Paragraph("Life Line", bold_center_style), Paragraph(highlight_keywords(palm_data.get("life_line", "")), text_style)],
+        [Paragraph("Fate Line", bold_center_style), Paragraph(highlight_keywords(palm_data.get("fate_line", "")), text_style)],
+        [Paragraph("Marriage Line", bold_center_style), Paragraph(highlight_keywords(palm_data.get("marriage_line", "")), text_style)],
+    ]
+
+    line_table = Table(line_data, colWidths=COLUMN_WIDTHS, repeatRows=1)
+    line_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), HEADER_BG),
+        ('TEXTCOLOR', (0, 0), (-1, 0), HEADER_TEXT),
+        ('GRID', (0, 0), (-1, -1), 1.2, BORDER_COLOR),
+        ('BACKGROUND', (0, 1), (-1, -1), BG_COLOR),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # Center first column
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    elements.append(line_table)
+    elements.append(Spacer(1, 12))
+
+    # Category Table
+    cat_data = [
+        [Paragraph("Category", table_header), Paragraph("Analysis & Guidance", table_header)],
+        [Paragraph("Personality", bold_center_style), Paragraph(highlight_keywords(palm_data.get("personality", "")), text_style)],
+        [Paragraph("Career & Finance", bold_center_style), Paragraph(highlight_keywords(palm_data.get("career", "")), text_style)],
+        [Paragraph("Love & Relationship", bold_center_style), Paragraph(highlight_keywords(palm_data.get("love", "")), text_style)],
+        [Paragraph("Health & Energy", bold_center_style), Paragraph(highlight_keywords(palm_data.get("health", "")), text_style)],
+        [Paragraph("Life Path", bold_center_style), Paragraph(highlight_keywords(palm_data.get("life_path", "")), text_style)],
+        [Paragraph("Lucky Traits", bold_center_style), Paragraph(highlight_keywords(palm_data.get("lucky_traits", "")), text_style)],
+        [Paragraph("Elemental Influence", bold_center_style), Paragraph(highlight_keywords(palm_data.get("elemental_influence", "")), text_style)],
+        [Paragraph("Recommendations", bold_center_style), Paragraph(highlight_keywords(palm_data.get("recommendations", "")), recommendation_style)],
+    ]
+
+    cat_table = Table(cat_data, colWidths=COLUMN_WIDTHS, repeatRows=1)
+    cat_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), HEADER_BG),
+        ('TEXTCOLOR', (0, 0), (-1, 0), HEADER_TEXT),
+        ('GRID', (0, 0), (-1, -1), 1.2, BORDER_COLOR),
+        ('BACKGROUND', (0, 1), (-1, -1), BG_COLOR),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+    ]))
+
+    elements.append(KeepInFrame(CONTENT_WIDTH, 520, [cat_table]))
+
+    # ---------------- Page 2 → Overall Insight + Image ----------------
+    elements.append(PageBreak())
+    elements.append(Spacer(1, 30))  # Top spacing
+    elements.append(Paragraph("🌟 Overall Insight", insight_heading_style))
+    elements.append(Spacer(1, 10))  # 10px space before box
+
+    insight_text = highlight_keywords(palm_data.get("answers", ""))
+    insight_box = KeepInFrame(CONTENT_WIDTH, 200, [Paragraph(insight_text, insight_value_style)], hAlign="CENTER")
+    elements.append(insight_box)
+    elements.append(Spacer(1, 20))
+
+    # Palm Image
+    if palm_image_bytes:
+        try:
+            img = Image.open(io.BytesIO(palm_image_bytes)).convert("RGB")
+            max_w, max_h = 4.5 * inch, 4.5 * inch
+            img.thumbnail((max_w, max_h), Image.LANCZOS)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=95)
+            buf.seek(0)
+            rl_img = RLImage(buf, width=max_w, height=max_h)
+            rl_img.hAlign = "CENTER"
+            image_table = Table([[rl_img]], colWidths=[CONTENT_WIDTH])
+            image_table.setStyle(TableStyle([
+                ('BOX', (0, 0), (-1, -1), 2, BORDER_COLOR),
+                ('BACKGROUND', (0, 0), (-1, -1), BG_COLOR),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('TOPPADDING', (0, 0), (-1, -1), 20),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 20),
+            ]))
+            elements.append(image_table)
+        except Exception as e:
+            print("Image error:", e)
+
+    # ---------------- Build PDF ----------------
+    doc.build(elements, onFirstPage=draw_page, onLaterPages=draw_page)
+    return file_path
+
+
+
+
+
+# /////////////////////////////////////////////////
+
+# @app.post("/ai-palm-reading-lite")
+# async def ai_palm_reading_lite(
+#     palm_image: UploadFile = File(...),
+#     user_questions: str = Form("")
+# ):
+#     try:
+#         logger.info("API HIT: /ai-palm-reading-lite")
+
+#         # ==============================
+#         # 1. FILE TYPE VALIDATION
+#         # ==============================
+#         if palm_image.content_type not in ["image/jpeg","image/png","application/pdf"]:
+#           raise HTTPException(
+#                 status_code=400,
+#                 detail="Only JPG, PNG or PDF allowed"
+#             )
+
+
+#         raw = await palm_image.read()
+
+#         # ==============================
+#         # 2. FILE SIZE VALIDATION
+#         # ==============================
+#         if len(raw) < 5000:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail="Image too small or invalid"
+#             )
+
+#         if len(raw) > 5 * 1024 * 1024:
+#             raise HTTPException(
+#                 status_code=400,
+#                 detail="Image too large (Max 5MB)"
+#             )
+
+#         # ==============================
+#         # 3. IMAGE OPTIMIZATION
+#         # ==============================
+#         if palm_image.content_type == "application/pdf":
+#            pages = convert_from_bytes(raw, dpi=200)
+#            img = pages[0]
+#            buf = io.BytesIO()
+#            img.save(buf, format="JPEG")
+#            raw = buf.getvalue()
+#         optimized = optimize_palm_image(raw)
+#         img_base64 = base64.b64encode(optimized).decode()
+
+#         # ==============================
+#         # 4. STEP-1: STRICT PALM VALIDATION
+#         # ==============================
+#         validation = validate_palm_image_with_ai(img_base64)
+
+#         logger.info("Palm validation result: %s", validation)
+
+#         if (
+#             not validation.get("is_palm")
+#             or validation.get("confidence", 0) < 70
+#         ):
+#             logger.warning("Image rejected as non-palm")
+#             return {
+#                 "status": "failed",
+#                 "error_code": "INVALID_PALM",
+#                 "message": validation.get(
+#                     "reason",
+#                     "Please upload a clear close-up photo of a human palm."
+#                 )
+#             }
+
+#         # ==============================
+#         # 5. STEP-2: PALM ANALYSIS
+#         # ==============================
+#         result = call_openai_palm_reader(img_base64, user_questions)
+
+#         # ==============================
+#         # 6. FINAL BUSINESS VALIDATION
+#         # ==============================
+#         # if result.get("status") == "invalid_image":
+#         #     return {
+#         #         "status": "failed",
+#         #         "error_code": "LOW_QUALITY_IMAGE",
+#         #         "message": result.get("message")
+#         #     }
+
+#         if not result or len(result.keys()) < 3:
+#             logger.warning("AI returned incomplete data")
+#             return {
+#                 "status": "failed",
+#                 "error_code": "INCOMPLETE_ANALYSIS",
+#                 "message": "Palm analysis could not be completed. Please upload a clearer image."
+#             }
+
+#         required_fields = [
+#             "heart_line",
+#             "head_line",
+#             "life_line"
+#         ]
+
+#         required_fields = ["heart_line", "head_line", "life_line"]
+
+#         for field in required_fields:
+#          if field not in result or len(result[field].strip()) < 25:  # reduced from 40
+#           logger.warning("Weak field detected: %s", field)
+#         # Provide fallback text instead of failing
+#           result[field] = f"{field.replace('_',' ').title()} details are limited"
+
+#         # generate pdf
+#         pdf_path = generate_palm_pdf(result, user_questions,raw)
+#         pdf_filename = os.path.basename(pdf_path)
+#         pdf_url = f"http://192.168.29.162:8000/static/{pdf_filename}"  # Or your server IP
+#         # ==============================
+#         # SUCCESS
+#         # ==============================
+#         return {
+#             "status": "success",
+#             "data": result,
+#             "pdf_url": pdf_url
+#         }
+
+#     except HTTPException:
+#         raise
+
+#     except Exception as e:
+#         logger.exception("PALM READING ERROR: %s", str(e))
+#         raise HTTPException(
+#             status_code=500,
+#             detail="Palm reading failed"
+#         )
 
 @app.post("/ai-palm-reading-lite")
 async def ai_palm_reading_lite(
@@ -630,17 +1745,212 @@ async def ai_palm_reading_lite(
 ):
     try:
         logger.info("API HIT: /ai-palm-reading-lite")
-        logger.info("USER QUESTION: %s", user_questions)
+
+        # ==============================
+        # 1. FILE TYPE VALIDATION
+        # ==============================
+        if palm_image.content_type not in ["image/jpeg","image/png","application/pdf"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Only JPG, PNG or PDF allowed"
+            )
 
         raw = await palm_image.read()
+
+        # ==============================
+        # 2. FILE SIZE VALIDATION
+        # ==============================
+        if len(raw) < 5000:
+            raise HTTPException(
+                status_code=400,
+                detail="Image too small or invalid"
+            )
+
+        if len(raw) > 5 * 1024 * 1024:
+            raise HTTPException(
+                status_code=400,
+                detail="Image too large (Max 5MB)"
+            )
+
+        # ==============================
+        # 3. IMAGE OPTIMIZATION
+        # ==============================
+        if palm_image.content_type == "application/pdf":
+            pages = convert_from_bytes(raw, dpi=200)
+            img = pages[0]
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG")
+            raw = buf.getvalue()
+
         optimized = optimize_palm_image(raw)
         img_base64 = base64.b64encode(optimized).decode()
 
-        result = call_openai_palm_reader(img_base64, user_questions)
+        # ==============================
+        # 4. STEP-1: STRICT PALM VALIDATION
+        # ==============================
+        validation = validate_palm_image_with_ai(img_base64)
+        logger.info("Palm validation result: %s", validation)
 
-        logger.info("FINAL RESPONSE READY")
-        return {"status": "success", "data": result}
+        if not validation.get("is_palm") or validation.get("confidence", 0) < 70:
+            logger.warning("Image rejected as non-palm")
+            return {
+                "status": "failed",
+                "error_code": "INVALID_PALM",
+                "message": validation.get(
+                    "reason",
+                    "Please upload a clear close-up photo of a human palm."
+                )
+            }
 
-    except Exception:
-        logger.exception("PALM READING ERROR")
-        raise HTTPException(status_code=500, detail="Palm reading failed")
+        # ==============================
+        # 5. STEP-2: PALM ANALYSIS WITH TOKEN TRACKING
+        # ==============================
+        # Modify your call_openai_palm_reader to return both result and token usage
+        result, token_info = call_openai_palm_reader(img_base64, user_questions, return_tokens=True)
+
+        # ==============================
+        # 6. FINAL BUSINESS VALIDATION
+        # ==============================
+        if not result or len(result.keys()) < 3:
+            logger.warning("AI returned incomplete data")
+            return {
+                "status": "failed",
+                "error_code": "INCOMPLETE_ANALYSIS",
+                "message": "Palm analysis could not be completed. Please upload a clearer image."
+            }
+
+        required_fields = ["heart_line", "head_line", "life_line"]
+        for field in required_fields:
+            if field not in result or len(result[field].strip()) < 25:
+                logger.warning("Weak field detected: %s", field)
+                result[field] = f"{field.replace('_',' ').title()} details are limited"
+
+        # ==============================
+        # 7. GENERATE PDF
+        # ==============================
+        pdf_path = generate_palm_pdf(result, user_questions, raw)
+        pdf_filename = os.path.basename(pdf_path)
+        pdf_url = f"http://192.168.29.162:8000/static/{pdf_filename}"  # Or your server IP
+
+        # ==============================
+        # SUCCESS RESPONSE
+        # ==============================
+        return {
+            "status": "success",
+            "data": result,
+            "pdf_url": pdf_url,
+            "tokens_used": token_info  # <-- Added token usage & cost
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.exception("PALM READING ERROR: %s", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail="Palm reading failed"
+        )
+
+
+
+
+# ///////////////////////////////////////////////////////////
+class MuhuratRequest(BaseModel):
+    start_date: str
+    end_date: str
+    user_request: str = "general"
+
+
+# @app.post("/generate_muhurat")
+# def generate_muhurat_post(request: MuhuratRequest):
+#     try:
+#         start_date = request.start_date
+#         end_date = request.end_date
+#         user_request = request.user_request
+
+#         sdt = datetime.strptime(start_date, "%Y-%m-%d").date()
+#         edt = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+#         # Existing logic (NO changes)
+#         raw = generate_muhurats(sdt, edt, user_request)
+#         ai_raw = call_openai(raw, user_request)
+#         final = format_muhurats_response(ai_raw, user_request)["recommended_muhurats"]
+
+#         pdf_path = generate_muhurat_pdf(
+#             muhurats=final,
+#             request_type=user_request,
+#             start_date=start_date,
+#             end_date=end_date
+#         )
+
+#         pdf_filename = os.path.basename(pdf_path)
+#         pdf_url = f"http://192.168.29.162:8000/static/{pdf_filename}"
+
+#         return {
+#             "status": "success",
+#             "request_type": user_request,
+#             "recommended_muhurats": final,
+#             "pdf_url": pdf_url
+#         }
+
+#     except Exception as e:
+#         logger.error("POST Muhurat Error: %s", e)
+#         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/generate_muhurat")
+def generate_muhurat_post(request: MuhuratRequest):
+    try:
+        start_date = request.start_date
+        end_date = request.end_date
+        user_request = request.user_request
+
+        sdt = datetime.strptime(start_date, "%Y-%m-%d").date()
+        edt = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+        # Existing logic (NO changes)
+        raw = generate_muhurats(sdt, edt, user_request)
+
+        # ---- Capture AI output + token usage safely ----
+        ai_response = call_openai(raw, user_request)
+
+        # Ensure unpacking safety
+        if isinstance(ai_response, tuple):
+            ai_raw, token_usage = ai_response
+        else:
+            ai_raw = ai_response
+            token_usage = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "cost_inr": 0
+            }
+
+        # Validate AI output
+        if not isinstance(ai_raw, list):
+            logger.error("AI returned invalid format")
+            raise HTTPException(status_code=500, detail="AI processing failed")
+
+        final = format_muhurats_response(ai_raw, user_request)["recommended_muhurats"]
+
+        pdf_path = generate_muhurat_pdf(
+            muhurats=final,
+            request_type=user_request,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        pdf_filename = os.path.basename(pdf_path)
+        pdf_url = f"http://192.168.29.162:8000/static/{pdf_filename}"
+
+        return {
+            "status": "success",
+            "request_type": user_request,
+            "recommended_muhurats": final,
+            "pdf_url": pdf_url,
+            "token_usage": token_usage
+        }
+
+    except Exception as e:
+        logger.error("POST Muhurat Error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
