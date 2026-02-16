@@ -46,6 +46,9 @@ logger = logging.getLogger("muhurat")
 swe.set_ephe_path(r"D:\python\astro-py\ephe")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY not found in environment")
 OPENAI_URL = os.getenv("OPENAI_URL")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL")
 if not OPENAI_API_KEY:
