@@ -16,7 +16,7 @@ from reportlab.platypus import (
     TableStyle
 )
 import base64
-from PIL import Image
+from PIL import Image, ImageOps, ImageEnhance
 import hashlib
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
@@ -27,8 +27,8 @@ from reportlab.lib.colors import HexColor
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pdf2image import convert_from_bytes
-
-
+import imagehash
+from PIL import ImageOps, ImageEnhance
 ORANGE = HexColor("#F57C00")   # Hindu orange
 LIGHT_ORANGE = HexColor("#FFF3E0")
 import uuid
@@ -48,10 +48,11 @@ OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = "gpt-4.1-mini"
 
 PALM_CACHE = {}
+
 def get_image_hash(image_bytes: bytes):
-    return hashlib.md5(image_bytes).hexdigest()
-
-
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    phash = imagehash.phash(img)
+    return str(phash)
 IST = pytz.timezone("Asia/Kolkata")
 
 app = FastAPI()
@@ -573,13 +574,35 @@ def ai_muhurat_range(start_date: str, end_date: str, user_request: str = "genera
 
 
 # ai-palm-reading-lite
+# def optimize_palm_image(image_bytes: bytes) -> bytes:
+#     logger.info("IMAGE INPUT SIZE (bytes): %d", len(image_bytes))
+
+#     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+#     # keep details of palm lines
+#     img.thumbnail((1024, 1024))
+
+#     buf = io.BytesIO()
+#     img.save(buf, format="JPEG", quality=85)
+
+#     optimized = buf.getvalue()
+#     logger.info("IMAGE OPTIMIZED SIZE (bytes): %d", len(optimized))
+
+#     return optimized
 def optimize_palm_image(image_bytes: bytes) -> bytes:
     logger.info("IMAGE INPUT SIZE (bytes): %d", len(image_bytes))
 
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
-    # keep details of palm lines
+    # Auto rotate
+    img = ImageOps.exif_transpose(img)
+
+    # Standard size
     img.thumbnail((1024, 1024))
+
+    # Normalize brightness & contrast
+    img = ImageEnhance.Brightness(img).enhance(1.1)
+    img = ImageEnhance.Contrast(img).enhance(1.2)
 
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=85)
@@ -588,7 +611,6 @@ def optimize_palm_image(image_bytes: bytes) -> bytes:
     logger.info("IMAGE OPTIMIZED SIZE (bytes): %d", len(optimized))
 
     return optimized
-
 
 def safe_json_from_ai(text: str):
     try:
@@ -1166,17 +1188,35 @@ def highlight_keywords(text):
     return text
 
 # Background + Header + Footer
+# def draw_page(canvas, doc):
+#     # Background
+#     canvas.setFillColor(BG_COLOR)
+#     canvas.rect(0, 0, A4[0], A4[1], fill=1)
+
+#     # Top Brand Name in BIG RED FONT
+#     canvas.setFillColor(BRAND_COLOR)
+#     canvas.setFont("Helvetica-Bold", 28)
+#     canvas.drawCentredString(A4[0] / 2, A4[1] - 35, BRAND_NAME)
+
+#     # Footer in Orange
+#     canvas.setFont("Helvetica", 9)
+#     canvas.setFillColor(FOOTER_COLOR)
+#     canvas.drawCentredString(
+#         A4[0] / 2,
+#         20,
+#         f"Location: {LOCATION} | Mobile: {MOBILE} | Email: {EMAIL}"
+#     )
 def draw_page(canvas, doc):
     # Background
     canvas.setFillColor(BG_COLOR)
     canvas.rect(0, 0, A4[0], A4[1], fill=1)
 
-    # Top Brand Name in BIG RED FONT
+    # Top Brand Name
     canvas.setFillColor(BRAND_COLOR)
     canvas.setFont("Helvetica-Bold", 28)
     canvas.drawCentredString(A4[0] / 2, A4[1] - 35, BRAND_NAME)
 
-    # Footer in Orange
+    # Footer details
     canvas.setFont("Helvetica", 9)
     canvas.setFillColor(FOOTER_COLOR)
     canvas.drawCentredString(
@@ -1185,7 +1225,10 @@ def draw_page(canvas, doc):
         f"Location: {LOCATION} | Mobile: {MOBILE} | Email: {EMAIL}"
     )
 
-# Main PDF Generator
+    # Page number (NEW)
+    canvas.setFillColor(colors.grey)
+    canvas.drawRightString(A4[0] - 40, 20, f"Page {doc.page}")
+
 def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
     os.makedirs("static", exist_ok=True)
     file_name = f"astrofy_palm_{uuid.uuid4().hex}.pdf"
@@ -1193,7 +1236,7 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
 
     CONTENT_WIDTH = 510
     side_margin = (A4[0] - CONTENT_WIDTH) / 2
-    COLUMN_WIDTHS = [150, 360]  # Equal and consistent for both tables
+    COLUMN_WIDTHS = [150, 360]
 
     doc = SimpleDocTemplate(
         file_path,
@@ -1206,7 +1249,7 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
 
     styles = getSampleStyleSheet()
 
-    # ---------------- Styles ----------------
+    # Styles
     title_style = ParagraphStyle(
         "Title",
         parent=styles["Heading1"],
@@ -1219,7 +1262,7 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
     text_style = ParagraphStyle(
         "Text",
         parent=styles["Normal"],
-        fontSize=11,
+        fontSize=10,
         leading=15,
         textColor=TEXT_COLOR
     )
@@ -1242,7 +1285,7 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
     insight_heading_style = ParagraphStyle(
         "InsightHeading",
         parent=text_style,
-        fontSize=14,
+        fontSize=12,
         textColor=colors.red,
         alignment=TA_CENTER,
         spaceAfter=10,
@@ -1252,7 +1295,7 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
     insight_value_style = ParagraphStyle(
         "InsightValue",
         parent=text_style,
-        fontSize=12,
+        fontSize=11,
         textColor=TEXT_COLOR,
         alignment=TA_LEFT,
         leading=16,
@@ -1263,7 +1306,7 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
     recommendation_style = ParagraphStyle(
         "Recommendation",
         parent=text_style,
-        fontSize=12,
+        fontSize=10,
         textColor=RECOMMENDATION_COLOR,
         alignment=TA_LEFT,
         leading=16
@@ -1271,7 +1314,7 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
 
     elements = []
 
-    # ---------------- Page 1 → Tables ----------------
+    # ---------------- Page 1 ----------------
     elements.append(Paragraph("KAstrofy Palm Reading Report", title_style))
 
     # Palm Lines Table
@@ -1285,21 +1328,18 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
     ]
 
     line_table = Table(line_data, colWidths=COLUMN_WIDTHS, repeatRows=1, hAlign='CENTER')
-    line_table._argW = COLUMN_WIDTHS
     line_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), HEADER_BG),
         ('TEXTCOLOR', (0, 0), (-1, 0), HEADER_TEXT),
         ('GRID', (0, 0), (-1, -1), 1.2, BORDER_COLOR),
         ('BACKGROUND', (0, 1), (-1, -1), BG_COLOR),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # Center first column
+        ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+        ('VALIGN', (0, 1), (0, -1), 'MIDDLE'),  # Vertical center
+        ('VALIGN', (1, 1), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 8),
         ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-
     ]))
+
     elements.append(line_table)
     elements.append(Spacer(1, 12))
 
@@ -1317,62 +1357,104 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
     ]
 
     cat_table = Table(cat_data, colWidths=COLUMN_WIDTHS, repeatRows=1, hAlign='CENTER')
-    cat_table._argW = COLUMN_WIDTHS
     cat_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), HEADER_BG),
         ('TEXTCOLOR', (0, 0), (-1, 0), HEADER_TEXT),
         ('GRID', (0, 0), (-1, -1), 1.2, BORDER_COLOR),
         ('BACKGROUND', (0, 1), (-1, -1), BG_COLOR),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('ALIGN', (0, 1), (0, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('VALIGN', (0, 1), (0, -1), 'MIDDLE'),
+        ('VALIGN', (1, 1), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 8),
         ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-
     ]))
 
-    # elements.append(KeepInFrame(CONTENT_WIDTH, 520, [cat_table]))
     elements.append(cat_table)
 
-
-    # ---------------- Overall Insight + Image ----------------
+    # ---------------- Page 2 ----------------
+    # ---------------- Page 2 ----------------
     elements.append(PageBreak())
-    elements.append(Spacer(1, 30))  # Top spacing
-    elements.append(Paragraph("🌟 Overall Insight", insight_heading_style))
-    elements.append(Spacer(1, 10))  # 10px space before box
 
     insight_text = highlight_keywords(palm_data.get("answers", ""))
-    insight_box = KeepInFrame(CONTENT_WIDTH, 200, [Paragraph(insight_text, insight_value_style)], hAlign="CENTER")
-    elements.append(insight_box)
-    elements.append(Spacer(1, 20))
 
-    # Palm Image
+    insight_box = KeepInFrame(
+    CONTENT_WIDTH,
+    120,  # Reduced height to avoid overflow
+    [Paragraph(insight_text, insight_value_style)],
+    mode="shrink"
+    )
+
+    page2_content = [
+     Spacer(1, 20),
+     Paragraph("🌟 Overall Insight", insight_heading_style),
+     Spacer(1, 10),
+     insight_box,
+     Spacer(1, 15)
+    ]
+
+# Palm Image
     if palm_image_bytes:
-        try:
-            img = Image.open(io.BytesIO(palm_image_bytes)).convert("RGB")
-            max_w, max_h = 4.5 * inch, 4.5 * inch
-            img.thumbnail((max_w, max_h), Image.LANCZOS)
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=95)
-            buf.seek(0)
-            rl_img = RLImage(buf, width=max_w, height=max_h)
-            rl_img.hAlign = "CENTER"
-            image_table = Table([[rl_img]], colWidths=[CONTENT_WIDTH])
-            image_table.setStyle(TableStyle([
-                ('BOX', (0, 0), (-1, -1), 2, BORDER_COLOR),
-                ('BACKGROUND', (0, 0), (-1, -1), BG_COLOR),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('TOPPADDING', (0, 0), (-1, -1), 20),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 20),
-            ]))
-            elements.append(image_table)
-        except Exception as e:
-            print("Image error:", e)
+       try:
+        img = Image.open(io.BytesIO(palm_image_bytes)).convert("RGB")
 
-    # ---------------- Build PDF ----------------
+        # Strict image size (important)
+        max_w, max_h = 4.0 * inch, 3.2 * inch
+        img.thumbnail((max_w, max_h), Image.LANCZOS)
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=95)
+        buf.seek(0)
+
+        rl_img = RLImage(buf, width=max_w, height=max_h)
+        rl_img.hAlign = "CENTER"
+
+        image_table = Table([[rl_img]], colWidths=[CONTENT_WIDTH])
+        image_table.setStyle(TableStyle([
+            ('BOX', (0, 0), (-1, -1), 2, BORDER_COLOR),
+            ('BACKGROUND', (0, 0), (-1, -1), BG_COLOR),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ]))
+
+        page2_content.append(image_table)
+
+       except Exception as e:
+        print("Image error:", e)
+
+# -------- CENTER + FORCE SINGLE PAGE --------
+
+    page2_frame = KeepInFrame(
+         CONTENT_WIDTH,
+         520,   # Strict total height to prevent page 3
+         page2_content,
+         mode="shrink"
+     )
+
+    page2_table = Table(
+         [[page2_frame]],
+         colWidths=[CONTENT_WIDTH],
+         hAlign='CENTER'
+     )
+
+    page2_table.setStyle(TableStyle([
+    ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ('LEFTPADDING', (0, 0), (-1, -1), 0),
+    ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+    ('TOPPADDING', (0, 0), (-1, -1), 0),
+    ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+   ]))
+
+    elements.append(page2_table)
+
+
+
+    # Build PDF
     doc.build(elements, onFirstPage=draw_page, onLaterPages=draw_page)
     return file_path
 
+# Generate palm read Response
 @app.post("/ai-palm-reading-lite")
 async def ai_palm_reading_lite(
     palm_image: UploadFile = File(...),
