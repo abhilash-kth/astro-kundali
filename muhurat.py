@@ -568,7 +568,7 @@ def ai_muhurat_range(start_date: str, end_date: str, user_request: str = "genera
             end_date=end_date
         )
         pdf_filename = os.path.basename(pdf_path)
-        pdf_url = f"http://127.0.0.1:8000/static/{pdf_filename}"
+        pdf_url = f"https://astro-kundali-wn41.onrender.com/static/{pdf_filename}"
 
         return {
             "status": "success",
@@ -1546,7 +1546,7 @@ async def ai_palm_reading_lite(
         # GENERATE PDF
         pdf_path = generate_palm_pdf(result, user_questions, raw)
         pdf_filename = os.path.basename(pdf_path)
-        pdf_url = f"http://192.168.29.162:8000/static/{pdf_filename}"  # Or your server IP
+        pdf_url = f"https://astro-kundali-wn41.onrender.com/static/{pdf_filename}"  # Or your server IP
 
         response_data = {
               "status": "success",
@@ -1623,7 +1623,7 @@ def generate_muhurat_post(request: MuhuratRequest):
         )
 
         pdf_filename = os.path.basename(pdf_path)
-        pdf_url = f"http://192.168.29.162:8000/static/{pdf_filename}"
+        pdf_url = f"https://astro-kundali-wn41.onrender.com/static/{pdf_filename}"
 
         return {
             "status": "success",
