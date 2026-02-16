@@ -17,7 +17,7 @@ from reportlab.platypus import (
 )
 import base64
 from PIL import Image
-
+import hashlib
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 from reportlab.lib import colors
@@ -46,6 +46,11 @@ swe.set_ephe_path(r"D:\python\astro-py\ephe")
 OPENAI_API_KEY = "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"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = "gpt-4.1-mini"
+
+PALM_CACHE = {}
+def get_image_hash(image_bytes: bytes):
+    return hashlib.md5(image_bytes).hexdigest()
+
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -271,10 +276,8 @@ def generate_muhurats(start_date, end_date, user_request="general"):
 
     return muhurats
 
-
-# -------------------------------------------------
 # PROMPT SIZE LOG
-# -------------------------------------------------
+
 def log_prompt_size(prompt: str, count: int):
     chars = len(prompt)
     tokens = chars // 4
@@ -283,71 +286,6 @@ def log_prompt_size(prompt: str, count: int):
         count, chars, tokens
     )
 
-# -------------------------------------------------
-# AI CALL (EXPLANATION ONLY)
-# -------------------------------------------------
-# def call_openai(muhurats, user_request):
-#     if not muhurats:
-#         return []
-    
-#     if len(muhurats) > MAX_MUHURATS:
-#      muhurats = muhurats[:MAX_MUHURATS]
-
-#     slots_str = "\n".join(
-#         f"{m['start']} → {m['end']} | {m['nakshatra']}"
-#         for m in muhurats
-#     )
-#     logger.info("Formatted slots string (first 500 chars):\n%s", slots_str[:500])
-     
-#     # breakpoint()  # STEP 2: Check slots_str formatting
-#     prompt = f"""
-# You are a Vedic Panchang expert and a Hindu astrology specialist.
-# Below are already-validated muhurat windows for "{user_request}".
-# Follow Hindu calendar rules (Tithi, Nakshatra, Karana, Yoga, Abhuj Muhurat, Rahu Kalam, Gulika) to provide explanations.
-# Do NOT reject or add new slots.
-# For each slot, give a short explanation why it is auspicious for this event according to Panchang.
-# Do NOT reject or add any slot.
-# Only add a short explanation for each.
-
-# Return ONLY valid JSON array.
-# Each item MUST be an object with keys:
-# start, end, nakshatra, explanation
-
-# Example:
-# [
-#   {{
-#     "start": "2025-11-01 06:00 AM",
-#     "end": "2025-11-01 10:00 AM",
-#     "nakshatra": "Rohini",
-#     "explanation": "Good for marriage..."
-#   }}
-# ]
-
-# Muhurats:
-# {slots_str}
-# """
-
-#     log_prompt_size(prompt, len(muhurats))
-
-#     r = requests.post(
-#         OPENAI_URL,
-#         headers={
-#             "Authorization": f"Bearer {OPENAI_API_KEY}",
-#             "Content-Type": "application/json"
-#         },
-#         json={
-#             "model": OPENAI_MODEL,
-#             "messages": [{"role": "user", "content": prompt}],
-#             "temperature": 0.2
-#         },
-#         timeout=30
-#     )
-
-#     r.raise_for_status()
-#     text = r.json()["choices"][0]["message"]["content"]
-
-#     match = re.search(r"\[.*\]", text, re.DOTALL)
-#     return json.loads(match.group(0)) if match else []
 def call_openai(muhurats, user_request):
     if not muhurats:
         return [], {"prompt_tokens":0, "completion_tokens":0, "total_tokens":0, "cost_inr":0}
@@ -602,38 +540,6 @@ def generate_muhurat_pdf(muhurats, request_type, start_date, end_date):
 
 
 # ai-muhurat generator
-
-# @app.get("/ai-muhurat-range")
-# def ai_muhurat_range(
-#     start_date: str,
-#     end_date: str,
-#     user_request: str = "general"
-# ):
-#     try:
-#         sdt = datetime.strptime(start_date, "%Y-%m-%d").date()
-#         edt = datetime.strptime(end_date, "%Y-%m-%d").date()
-
-#         raw = generate_muhurats(sdt, edt, user_request)
-#         ai_raw = call_openai(raw, user_request)
-#         final = format_muhurats_response(ai_raw, user_request)["recommended_muhurats"]
-#         pdf_path = generate_muhurat_pdf(
-#             muhurats=final,
-#             request_type=user_request,
-#             start_date=start_date,
-#             end_date=end_date
-#         )
-#         pdf_filename = os.path.basename(pdf_path)
-#         pdf_url = f"http://127.0.0.1:8000/static/{pdf_filename}"
-#         return {
-#             "status": "success",
-#             "request_type": user_request,
-#             "recommended_muhurats": final,
-#             "pdf_url": pdf_url   # ONLY addition
-#         }
-
-#     except Exception as e:
-#         logger.error("Error: %s", e)
-#         raise HTTPException(status_code=500, detail=str(e))
 @app.get("/ai-muhurat-range")
 def ai_muhurat_range(start_date: str, end_date: str, user_request: str = "general"):
     try:
@@ -1045,14 +951,7 @@ def build_platinum_palm_reading(data):
 
 
 
-# -------------------------------
-# Helper: Map AI description to knowledge base
-# -------------------------------
-
-# ------------------------------- 
 # Helper: enrich raw AI response using PALMISTRY_KNOWLEDGE
-# -------------------------------
-
 def enrich_with_knowledge(palm_data):
     """
     Enrich palm_data with detailed knowledge and premium insights.
@@ -1100,57 +999,6 @@ def enrich_with_knowledge(palm_data):
 
 
 # ------------------------------- Main AI palm reading call -------------------------------
-# def call_openai_palm_reader(base64_image: str, user_questions: str):
-#     """
-#     Main AI palm reading function.
-#     Assumes palm validation already passed.
-#     Returns enriched and structured palmistry insights.
-#     """
-#     prompt = build_palm_prompt(user_questions)
-
-#     try:
-#         r = requests.post(
-#             OPENAI_URL,
-#             headers={
-#                 "Authorization": f"Bearer {OPENAI_API_KEY}",
-#                 "Content-Type": "application/json"
-#             },
-#             json={
-#                 "model": OPENAI_MODEL,
-#                 "messages": [
-#                     {"role": "system", "content": "You are a professional palmist. Return ONLY JSON."},
-#                     {"role": "user", "content": [
-#                         {"type": "text", "text": prompt},
-#                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-#                     ]}
-#                 ],
-#                 "response_format": {"type": "json_object"},
-#                 "temperature": 0.4,
-#                 "max_tokens": 700
-#             },
-#             timeout=40
-#         )
-#         r.raise_for_status()
-#         content = r.json()
-#         parsed = json.loads(content["choices"][0]["message"]["content"])
-
-#     except Exception as e:
-#         logger.error("OpenAI palm reader error: %s", str(e))
-#         return invalid_response("AI processing failed")
-
-#     # Respect invalid image response from AI
-#     if parsed.get("status") == "invalid_image":
-#         return invalid_response(parsed.get("message", "Palm lines are not clearly visible"))
-
-#     # Ensure required fields exist with safe fallback
-#     required_fields = ["heart_line", "head_line", "life_line", "fate_line", "marriage_line", "answers"]
-#     for field in required_fields:
-#         if field not in parsed or len(parsed[field].strip()) < 10:
-#             parsed[field] = f"{field.replace('_', ' ').title()} details are limited"
-
-#     # ---------------- Enrich parsed data ----------------
-#     enriched = enrich_with_knowledge(parsed)
-#     return enriched
 
 def call_openai_palm_reader(base64_image: str, user_questions: str, return_tokens: bool = False):
     """
@@ -1179,7 +1027,8 @@ def call_openai_palm_reader(base64_image: str, user_questions: str, return_token
                     ]}
                 ],
                 "response_format": {"type": "json_object"},
-                "temperature": 0.4,
+                "temperature": 0,
+                "top_p": 1,
                 "max_tokens": 700
             },
             timeout=40
@@ -1265,93 +1114,11 @@ def call_openai_palm_reader(base64_image: str, user_questions: str, return_token
 
     return enriched
 
-
-
-
-
 # ------------------------------- Helper for invalid image -------------------------------
 def invalid_response(message: str):
     return {"status": "invalid_image", "message": message}
 
-# ////////////////////////////////////
-# Generate PDF
-# from reportlab.lib.pagesizes import A4
-# from reportlab.platypus import (
-#     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-#     Image as RLImage, PageBreak, KeepInFrame
-# )
-# from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-# from reportlab.lib.enums import TA_CENTER, TA_LEFT
-# from reportlab.lib import colors
-# from reportlab.lib.colors import HexColor
-# from reportlab.lib.units import inch
-# import os, uuid, io
-# from PIL import Image
-
-# # ==========================================
-# # COLORS
-# # ==========================================
-# BG_COLOR = HexColor("#f5f5e7")
-# BORDER_COLOR = HexColor("#eb8552")
-# HEADER_BG = HexColor("#eb8552")
-# HEADER_TEXT = colors.white
-# TEXT_COLOR = colors.black
-# GREEN_HIGHLIGHT = HexColor("#1b8f3a")
-# INSIGHT_BOX_BG = colors.white
-# BRAND_COLOR = colors.red
-# FOOTER_COLOR = HexColor("#ff6600")  # Orange
-# RECOMMENDATION_COLOR = HexColor("#ff3300")  # Red/Orange for recommendation text
-
-# # ==========================================
-# # BRAND
-# # ==========================================
-# BRAND_NAME = "KAstrofy"
-# LOCATION = "Agarwal Bhavan"
-# MOBILE = "9999999999"
-# EMAIL = "astrofy@gmail.com"
-
-# # ==========================================
-# # Highlight Keywords
-# # ==========================================
-# def highlight_keywords(text):
-#     if not text:
-#         return ""
-#     keywords = [
-#         "strong", "stable", "positive", "success",
-#         "growth", "opportunity", "health",
-#         "career", "love", "energy", "vitality",
-#         "loyalty", "creativity", "resilience"
-#     ]
-#     for word in keywords:
-#         text = text.replace(word, f'<font color="{GREEN_HIGHLIGHT}"><b>{word}</b></font>')
-#         text = text.replace(word.capitalize(), f'<font color="{GREEN_HIGHLIGHT}"><b>{word.capitalize()}</b></font>')
-#     return text
-
-# # ==========================================
-# # Background + Header + Footer
-# # ==========================================
-# def draw_page(canvas, doc):
-#     # Background
-#     canvas.setFillColor(BG_COLOR)
-#     canvas.rect(0, 0, A4[0], A4[1], fill=1)
-
-#     # Top Brand Name in BIG RED FONT
-#     canvas.setFillColor(BRAND_COLOR)
-#     canvas.setFont("Helvetica-Bold", 28)
-#     canvas.drawCentredString(A4[0] / 2, A4[1] - 35, BRAND_NAME)
-
-#     # Footer in Orange
-#     canvas.setFont("Helvetica", 9)
-#     canvas.setFillColor(FOOTER_COLOR)
-#     canvas.drawCentredString(
-#         A4[0] / 2,
-#         20,
-#         f"Location: {LOCATION} | Mobile: {MOBILE} | Email: {EMAIL}"
-#     )
-
-# ==========================================
 # Main PDF Generator
-# ==========================================
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
@@ -1365,9 +1132,7 @@ from reportlab.lib.units import inch
 import os, uuid, io
 from PIL import Image
 
-# ==========================================
 # COLORS
-# ==========================================
 BG_COLOR = HexColor("#f5f5e7")
 BORDER_COLOR = HexColor("#eb8552")
 HEADER_BG = HexColor("#eb8552")
@@ -1379,17 +1144,13 @@ BRAND_COLOR = colors.red
 FOOTER_COLOR = HexColor("#ff6600")  # Orange
 RECOMMENDATION_COLOR = HexColor("#ff3300")  # Red/Orange for recommendation text
 
-# ==========================================
 # BRAND
-# ==========================================
 BRAND_NAME = "KAstrofy"
 LOCATION = "Agarwal Bhavan"
 MOBILE = "9999999999"
 EMAIL = "astrofy@gmail.com"
 
-# ==========================================
 # Highlight Keywords
-# ==========================================
 def highlight_keywords(text):
     if not text:
         return ""
@@ -1404,9 +1165,7 @@ def highlight_keywords(text):
         text = text.replace(word.capitalize(), f'<font color="{GREEN_HIGHLIGHT}"><b>{word.capitalize()}</b></font>')
     return text
 
-# ==========================================
 # Background + Header + Footer
-# ==========================================
 def draw_page(canvas, doc):
     # Background
     canvas.setFillColor(BG_COLOR)
@@ -1426,9 +1185,7 @@ def draw_page(canvas, doc):
         f"Location: {LOCATION} | Mobile: {MOBILE} | Email: {EMAIL}"
     )
 
-# ==========================================
 # Main PDF Generator
-# ==========================================
 def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
     os.makedirs("static", exist_ok=True)
     file_name = f"astrofy_palm_{uuid.uuid4().hex}.pdf"
@@ -1527,7 +1284,8 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
         [Paragraph("Marriage Line", bold_center_style), Paragraph(highlight_keywords(palm_data.get("marriage_line", "")), text_style)],
     ]
 
-    line_table = Table(line_data, colWidths=COLUMN_WIDTHS, repeatRows=1)
+    line_table = Table(line_data, colWidths=COLUMN_WIDTHS, repeatRows=1, hAlign='CENTER')
+    line_table._argW = COLUMN_WIDTHS
     line_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), HEADER_BG),
         ('TEXTCOLOR', (0, 0), (-1, 0), HEADER_TEXT),
@@ -1537,6 +1295,10 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
         ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # Center first column
         ('LEFTPADDING', (0, 0), (-1, -1), 8),
         ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+
     ]))
     elements.append(line_table)
     elements.append(Spacer(1, 12))
@@ -1554,7 +1316,8 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
         [Paragraph("Recommendations", bold_center_style), Paragraph(highlight_keywords(palm_data.get("recommendations", "")), recommendation_style)],
     ]
 
-    cat_table = Table(cat_data, colWidths=COLUMN_WIDTHS, repeatRows=1)
+    cat_table = Table(cat_data, colWidths=COLUMN_WIDTHS, repeatRows=1, hAlign='CENTER')
+    cat_table._argW = COLUMN_WIDTHS
     cat_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), HEADER_BG),
         ('TEXTCOLOR', (0, 0), (-1, 0), HEADER_TEXT),
@@ -1562,11 +1325,17 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
         ('BACKGROUND', (0, 1), (-1, -1), BG_COLOR),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+
     ]))
 
-    elements.append(KeepInFrame(CONTENT_WIDTH, 520, [cat_table]))
+    # elements.append(KeepInFrame(CONTENT_WIDTH, 520, [cat_table]))
+    elements.append(cat_table)
 
-    # ---------------- Page 2 → Overall Insight + Image ----------------
+
+    # ---------------- Overall Insight + Image ----------------
     elements.append(PageBreak())
     elements.append(Spacer(1, 30))  # Top spacing
     elements.append(Paragraph("🌟 Overall Insight", insight_heading_style))
@@ -1604,140 +1373,6 @@ def generate_palm_pdf(palm_data, user_questions=None, palm_image_bytes=None):
     doc.build(elements, onFirstPage=draw_page, onLaterPages=draw_page)
     return file_path
 
-
-
-
-
-# /////////////////////////////////////////////////
-
-# @app.post("/ai-palm-reading-lite")
-# async def ai_palm_reading_lite(
-#     palm_image: UploadFile = File(...),
-#     user_questions: str = Form("")
-# ):
-#     try:
-#         logger.info("API HIT: /ai-palm-reading-lite")
-
-#         # ==============================
-#         # 1. FILE TYPE VALIDATION
-#         # ==============================
-#         if palm_image.content_type not in ["image/jpeg","image/png","application/pdf"]:
-#           raise HTTPException(
-#                 status_code=400,
-#                 detail="Only JPG, PNG or PDF allowed"
-#             )
-
-
-#         raw = await palm_image.read()
-
-#         # ==============================
-#         # 2. FILE SIZE VALIDATION
-#         # ==============================
-#         if len(raw) < 5000:
-#             raise HTTPException(
-#                 status_code=400,
-#                 detail="Image too small or invalid"
-#             )
-
-#         if len(raw) > 5 * 1024 * 1024:
-#             raise HTTPException(
-#                 status_code=400,
-#                 detail="Image too large (Max 5MB)"
-#             )
-
-#         # ==============================
-#         # 3. IMAGE OPTIMIZATION
-#         # ==============================
-#         if palm_image.content_type == "application/pdf":
-#            pages = convert_from_bytes(raw, dpi=200)
-#            img = pages[0]
-#            buf = io.BytesIO()
-#            img.save(buf, format="JPEG")
-#            raw = buf.getvalue()
-#         optimized = optimize_palm_image(raw)
-#         img_base64 = base64.b64encode(optimized).decode()
-
-#         # ==============================
-#         # 4. STEP-1: STRICT PALM VALIDATION
-#         # ==============================
-#         validation = validate_palm_image_with_ai(img_base64)
-
-#         logger.info("Palm validation result: %s", validation)
-
-#         if (
-#             not validation.get("is_palm")
-#             or validation.get("confidence", 0) < 70
-#         ):
-#             logger.warning("Image rejected as non-palm")
-#             return {
-#                 "status": "failed",
-#                 "error_code": "INVALID_PALM",
-#                 "message": validation.get(
-#                     "reason",
-#                     "Please upload a clear close-up photo of a human palm."
-#                 )
-#             }
-
-#         # ==============================
-#         # 5. STEP-2: PALM ANALYSIS
-#         # ==============================
-#         result = call_openai_palm_reader(img_base64, user_questions)
-
-#         # ==============================
-#         # 6. FINAL BUSINESS VALIDATION
-#         # ==============================
-#         # if result.get("status") == "invalid_image":
-#         #     return {
-#         #         "status": "failed",
-#         #         "error_code": "LOW_QUALITY_IMAGE",
-#         #         "message": result.get("message")
-#         #     }
-
-#         if not result or len(result.keys()) < 3:
-#             logger.warning("AI returned incomplete data")
-#             return {
-#                 "status": "failed",
-#                 "error_code": "INCOMPLETE_ANALYSIS",
-#                 "message": "Palm analysis could not be completed. Please upload a clearer image."
-#             }
-
-#         required_fields = [
-#             "heart_line",
-#             "head_line",
-#             "life_line"
-#         ]
-
-#         required_fields = ["heart_line", "head_line", "life_line"]
-
-#         for field in required_fields:
-#          if field not in result or len(result[field].strip()) < 25:  # reduced from 40
-#           logger.warning("Weak field detected: %s", field)
-#         # Provide fallback text instead of failing
-#           result[field] = f"{field.replace('_',' ').title()} details are limited"
-
-#         # generate pdf
-#         pdf_path = generate_palm_pdf(result, user_questions,raw)
-#         pdf_filename = os.path.basename(pdf_path)
-#         pdf_url = f"http://192.168.29.162:8000/static/{pdf_filename}"  # Or your server IP
-#         # ==============================
-#         # SUCCESS
-#         # ==============================
-#         return {
-#             "status": "success",
-#             "data": result,
-#             "pdf_url": pdf_url
-#         }
-
-#     except HTTPException:
-#         raise
-
-#     except Exception as e:
-#         logger.exception("PALM READING ERROR: %s", str(e))
-#         raise HTTPException(
-#             status_code=500,
-#             detail="Palm reading failed"
-#         )
-
 @app.post("/ai-palm-reading-lite")
 async def ai_palm_reading_lite(
     palm_image: UploadFile = File(...),
@@ -1746,9 +1381,7 @@ async def ai_palm_reading_lite(
     try:
         logger.info("API HIT: /ai-palm-reading-lite")
 
-        # ==============================
-        # 1. FILE TYPE VALIDATION
-        # ==============================
+        # FILE TYPE VALIDATION
         if palm_image.content_type not in ["image/jpeg","image/png","application/pdf"]:
             raise HTTPException(
                 status_code=400,
@@ -1756,10 +1389,7 @@ async def ai_palm_reading_lite(
             )
 
         raw = await palm_image.read()
-
-        # ==============================
-        # 2. FILE SIZE VALIDATION
-        # ==============================
+        # FILE SIZE VALIDATION
         if len(raw) < 5000:
             raise HTTPException(
                 status_code=400,
@@ -1771,10 +1401,7 @@ async def ai_palm_reading_lite(
                 status_code=400,
                 detail="Image too large (Max 5MB)"
             )
-
-        # ==============================
-        # 3. IMAGE OPTIMIZATION
-        # ==============================
+        # IMAGE OPTIMIZATION
         if palm_image.content_type == "application/pdf":
             pages = convert_from_bytes(raw, dpi=200)
             img = pages[0]
@@ -1785,9 +1412,14 @@ async def ai_palm_reading_lite(
         optimized = optimize_palm_image(raw)
         img_base64 = base64.b64encode(optimized).decode()
 
-        # ==============================
-        # 4. STEP-1: STRICT PALM VALIDATION
-        # ==============================
+        image_hash = get_image_hash(optimized)
+
+        if image_hash in PALM_CACHE:
+         logger.info("Returning cached palm result")
+         cached_response = PALM_CACHE[image_hash]
+         return cached_response
+
+        # STRICT PALM VALIDATION
         validation = validate_palm_image_with_ai(img_base64)
         logger.info("Palm validation result: %s", validation)
 
@@ -1802,15 +1434,9 @@ async def ai_palm_reading_lite(
                 )
             }
 
-        # ==============================
-        # 5. STEP-2: PALM ANALYSIS WITH TOKEN TRACKING
-        # ==============================
         # Modify your call_openai_palm_reader to return both result and token usage
         result, token_info = call_openai_palm_reader(img_base64, user_questions, return_tokens=True)
 
-        # ==============================
-        # 6. FINAL BUSINESS VALIDATION
-        # ==============================
         if not result or len(result.keys()) < 3:
             logger.warning("AI returned incomplete data")
             return {
@@ -1825,22 +1451,23 @@ async def ai_palm_reading_lite(
                 logger.warning("Weak field detected: %s", field)
                 result[field] = f"{field.replace('_',' ').title()} details are limited"
 
-        # ==============================
-        # 7. GENERATE PDF
-        # ==============================
+        # GENERATE PDF
         pdf_path = generate_palm_pdf(result, user_questions, raw)
         pdf_filename = os.path.basename(pdf_path)
         pdf_url = f"http://192.168.29.162:8000/static/{pdf_filename}"  # Or your server IP
 
-        # ==============================
-        # SUCCESS RESPONSE
-        # ==============================
-        return {
-            "status": "success",
-            "data": result,
-            "pdf_url": pdf_url,
-            "tokens_used": token_info  # <-- Added token usage & cost
-        }
+        response_data = {
+              "status": "success",
+              "data": result,
+              "pdf_url": pdf_url,
+              "tokens_used": token_info
+           }
+
+
+        PALM_CACHE[image_hash] = response_data
+
+        return response_data
+
 
     except HTTPException:
         raise
@@ -1860,43 +1487,6 @@ class MuhuratRequest(BaseModel):
     start_date: str
     end_date: str
     user_request: str = "general"
-
-
-# @app.post("/generate_muhurat")
-# def generate_muhurat_post(request: MuhuratRequest):
-#     try:
-#         start_date = request.start_date
-#         end_date = request.end_date
-#         user_request = request.user_request
-
-#         sdt = datetime.strptime(start_date, "%Y-%m-%d").date()
-#         edt = datetime.strptime(end_date, "%Y-%m-%d").date()
-
-#         # Existing logic (NO changes)
-#         raw = generate_muhurats(sdt, edt, user_request)
-#         ai_raw = call_openai(raw, user_request)
-#         final = format_muhurats_response(ai_raw, user_request)["recommended_muhurats"]
-
-#         pdf_path = generate_muhurat_pdf(
-#             muhurats=final,
-#             request_type=user_request,
-#             start_date=start_date,
-#             end_date=end_date
-#         )
-
-#         pdf_filename = os.path.basename(pdf_path)
-#         pdf_url = f"http://192.168.29.162:8000/static/{pdf_filename}"
-
-#         return {
-#             "status": "success",
-#             "request_type": user_request,
-#             "recommended_muhurats": final,
-#             "pdf_url": pdf_url
-#         }
-
-#     except Exception as e:
-#         logger.error("POST Muhurat Error: %s", e)
-#         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/generate_muhurat")
 def generate_muhurat_post(request: MuhuratRequest):
