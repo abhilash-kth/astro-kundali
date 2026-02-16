@@ -33,6 +33,8 @@ ORANGE = HexColor("#F57C00")   # Hindu orange
 LIGHT_ORANGE = HexColor("#FFF3E0")
 import uuid
 from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
+load_dotenv()
 
 
 # -------------------------------------------------
@@ -43,9 +45,17 @@ logger = logging.getLogger("muhurat")
 
 swe.set_ephe_path(r"D:\python\astro-py\ephe")
 
-OPENAI_API_KEY = "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"
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-OPENAI_MODEL = "gpt-4.1-mini"
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_URL = os.getenv("OPENAI_URL")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL")
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY not set")
+
+headers = {
+    "Authorization": f"Bearer {OPENAI_API_KEY}",
+    "Content-Type": "application/json"
+}
+# OPENAI_MODEL = "gpt-4.1-mini"
 
 PALM_CACHE = {}
 
